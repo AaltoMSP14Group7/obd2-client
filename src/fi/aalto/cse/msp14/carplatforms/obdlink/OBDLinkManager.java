@@ -28,7 +28,7 @@ import fi.aalto.cse.msp14.carplatforms.obdlink.OBDLinkManager.OBD2DataQuery.Erro
 
 public final class OBDLinkManager {
     private static final long           BT_ADAPTER_START_TIMEOUT        = 4000; // ms
-    private static final long           BT_DATA_QUERY_TIMEOUT           = 200; // ms
+    private static final long           BT_DATA_QUERY_TIMEOUT           = 400; // ms
     private static final long           BT_DATA_QUERY_LONG_TIMEOUT      = 2500; // ms
     private static final String         LOG_TAG                         = "OBDLinkManager";
 
@@ -80,6 +80,13 @@ public final class OBDLinkManager {
     }
 
     @SuppressWarnings("serial")
+    private static class OBDResponseErrorException extends CommandFailedException {
+    	OBDResponseErrorException(String detailMessage) {
+			super(detailMessage);
+        }
+    }
+
+    @SuppressWarnings("serial")
     private static final class VehiclePowerStateInterruptException extends Exception {
     }
     
@@ -89,6 +96,10 @@ public final class OBDLinkManager {
     
     @SuppressWarnings("serial")
     private static final class VehicleShutdownException extends Exception {
+    }
+    
+    @SuppressWarnings("serial")
+    private static final class OBDNegativeResponseException extends Exception {
     }
     
     private static class DataQueryErrorResponse implements Runnable {
@@ -891,6 +902,14 @@ public final class OBDLinkManager {
         final boolean vehiclePowerState;
 
         try {
+        	warmupOBD(socket);
+        } catch (CommandFailedException ex) {
+        	// Warmup failed, :(
+        	return false;
+        }
+        
+        
+        try {
             // Ask device to identify itself
             m_adapterType = queryAdapterString(socket, "ATI\r");
 
@@ -899,13 +918,14 @@ public final class OBDLinkManager {
 
             Log.i(LOG_TAG, "Implementation information query complete.");
             Log.i(LOG_TAG, "Connected to adapter \"" + m_adapterType + "\"");
-            Log.i(LOG_TAG, "Vehicle power state = " + m_vehiclePowerState);
+            Log.i(LOG_TAG, "Vehicle power state = " + vehiclePowerState);
         } catch (CommandFailedException ex) {
             Log.e(LOG_TAG, "Target device information failed, error = " + ex.getMessage());
             return false;
         }
-
+        
         if (vehiclePowerState) {
+        	// Try to activate OBD
             try {
                 activateOBD(socket);
 
@@ -916,7 +936,7 @@ public final class OBDLinkManager {
                 return false;
             }
         }
-
+        
         return true;
     }
 
@@ -931,21 +951,42 @@ public final class OBDLinkManager {
 
         Log.i(LOG_TAG, "Protocol handshake, poking connection");
 
-        // write <CR> and wait for prompt
-        if (tryWriteToSocket(socket, "\r", handshakeTimout) && tryWaitForProtocolPrompt(socket, handshakeTimout))
+        // write AT and wait for prompt
+        if (tryWriteToSocket(socket, "AT\r", handshakeTimout) &&
+    		tryWaitForProtocolPrompt(socket, handshakeTimout) &&
+    		clearBufferedMessages(socket, true))
             return true;
 
         Log.i(LOG_TAG, "Protocol handshake, reset(soft) connection");
 
         // too slow? Reset it softly and wait again
-        if (tryWriteToSocket(socket, "ATWS\r", handshakeTimout) && tryWaitForProtocolPrompt(socket, handshakeTimout))
+        if (tryWriteToSocket(socket, "ATWS\r", handshakeTimout) &&
+    		tryWaitForProtocolPrompt(socket, handshakeTimout) &&
+    		clearBufferedMessages(socket, true))
             return true;
 
         Log.i(LOG_TAG, "Protocol handshake, reset(hard) connection");
-
+        
         // too slow again? Reset it hard and wait again
-        if (tryWriteToSocket(socket, "ATZ\r", handshakeTimout) && tryWaitForProtocolPrompt(socket, hardResetTimout))
+        if (tryWriteToSocket(socket, "ATZ\r", handshakeTimout) &&
+    		tryWaitForProtocolPrompt(socket, hardResetTimout) &&
+    		clearBufferedMessages(socket, true))
             return true;
+
+        Log.i(LOG_TAG, "Protocol handshake, reset bt connection");
+        
+        // too slow again? Reset bt and wait again
+        try
+        {
+	        socket.close();
+	        socket.connect();
+	        if (tryWriteToSocket(socket, "AT\r", handshakeTimout) &&
+	    		tryWaitForProtocolPrompt(socket, hardResetTimout) &&
+	    		clearBufferedMessages(socket, true))
+	            return true;
+        } catch (IOException ex) {
+        	Log.i(LOG_TAG, "Protocol handshake, socket reset failed", ex);        	
+        }
 
         Log.i(LOG_TAG, "Protocol handshake failed");
 
@@ -1100,7 +1141,7 @@ public final class OBDLinkManager {
             promptFoundInFuture = readFuture.get(timeout, TimeUnit.MILLISECONDS);
         } catch (TimeoutException ex) {
             // timed out while waiting for prompt
-            Log.d(LOG_TAG, "Timeout while waiting prompt, read thus far = " + resultBuffer);
+            Log.d(LOG_TAG, "Timeout while waiting prompt, timeout = " + timeout + "ms, read thus far = " + resultBuffer);
             return null;
         } catch (Exception ex) {
             // unexpected
@@ -1178,9 +1219,9 @@ public final class OBDLinkManager {
                 final String powerState = queryAdapterString(socket, "ATIGN\r");
 
                 if (powerState.equals("ON")) {
-                    // Adapters sometimes lie, test query supported pids
+                    // Adapters sometimes lie, test query supported pids (this might be the first query, increse timeout")
                     try {
-                        queryAdapterString(socket, "0100\r");
+                        queryAdapterString(socket, "0100\r", BT_DATA_QUERY_LONG_TIMEOUT);
                         return true;
                     } catch (CommandFailedException ex) {
                         // IGN is ON, but ECU is not on
@@ -1207,18 +1248,23 @@ public final class OBDLinkManager {
         Log.i(LOG_TAG, "Warming up query, type = " + command);
         try {
             clearBufferedMessages(socket, false);
-            queryOBDData(socket, command, BT_DATA_QUERY_LONG_TIMEOUT);
+            queryAdapterString(socket, command, BT_DATA_QUERY_LONG_TIMEOUT);
             clearBufferedMessages(socket, true);
+        } catch (CommandNoResultDataException ex) {
+        	// all ok
+        	Log.i(LOG_TAG, "Ignoring errors no data");
         } catch (CommandFailedException ex) {
-            // ignore, this is just warmup
+            // log error, rethrow
+            Log.i(LOG_TAG, "Got error during warmup, ex = " + ex.getMessage());
+            throw ex;
         }
     }
 
-    private byte[] queryOBDData(final BluetoothSocket socket, final String command) throws CommandFailedException, VehiclePowerStateInterruptException {
+    private byte[] queryOBDData(final BluetoothSocket socket, final String command) throws CommandFailedException, VehiclePowerStateInterruptException, OBDNegativeResponseException {
         return queryOBDData(socket, command, BT_DATA_QUERY_TIMEOUT);
     }
 
-    private byte[] queryOBDData(final BluetoothSocket socket, final String command, final long timeout) throws CommandFailedException, VehiclePowerStateInterruptException {
+    private byte[] queryOBDData(final BluetoothSocket socket, final String command, final long timeout) throws CommandFailedException, VehiclePowerStateInterruptException, OBDNegativeResponseException {
         // Validate data before sending
         final byte[] commandData = OBDHexStringToData(command);
         if (commandData == null || commandData.length == 0)
@@ -1227,13 +1273,13 @@ public final class OBDLinkManager {
         return queryOBDData(socket, commandData, timeout);
     }
 
-    private byte[] queryOBDData(final BluetoothSocket socket, final byte[] commandData, final long timeout) throws CommandFailedException, VehiclePowerStateInterruptException {
+    private byte[] queryOBDData(final BluetoothSocket socket, final byte[] commandData, final long timeout) throws CommandFailedException, VehiclePowerStateInterruptException, OBDNegativeResponseException {
         final String response = queryAdapterString(socket, OBDDataToOBDCommandString(commandData), timeout);
 
         // Data is hexadecimal?
         final byte[] responseData = OBDHexStringToData(response);
         if (responseData == null || responseData.length == 0)
-            throw new CommandFailedException("Failed to execute " + OBDDataToString(commandData) + ": result data is not valid hex string. Response " + OBDDataToString(responseData));
+            throw new CommandFailedException("Failed to execute " + OBDDataToString(commandData) + ": result data is not valid hex string. Response " + response);
 
         return getOBDResponseData(commandData, responseData);
     }
@@ -1292,7 +1338,7 @@ public final class OBDLinkManager {
         return retVal;
     }
 
-    private String OBDDataToString (final byte[] data) {
+    private String OBDDataToString(final byte[] data) {
         StringBuilder buf = new StringBuilder();
 
         if (data.length >= 1)
@@ -1304,7 +1350,7 @@ public final class OBDLinkManager {
         return buf.toString();
     }
 
-    private String OBDDataToOBDCommandString (final byte[] data) {
+    private String OBDDataToOBDCommandString(final byte[] data) {
         StringBuilder buf = new StringBuilder();
 
         if (data.length >= 1)
@@ -1317,43 +1363,53 @@ public final class OBDLinkManager {
         return buf.toString();
     }
 
-    private byte[] getOBDResponseData(final byte[] commandData, final byte[] responseData) throws CommandFailedException{
+    private byte[] getOBDResponseData(final byte[] commandData, final byte[] responseData) throws CommandFailedException, OBDNegativeResponseException {
         // Data is a response to our query?
 
         final int queryHeaderLength;
 
+        // Magical 7fXXYY response = negative response
+        if (responseData.length == 3 && responseData[0] == 0x7f)
+    	{
+        	if (responseData[1] == commandData[0])
+        		throw new OBDNegativeResponseException();
+        	
+        	throw new OBDResponseErrorException("Got illegal negative response for a query. Response " + OBDDataToString(responseData));
+    	}
+        
+    	// Assume normal response
         if (commandData[0] == 0x01 && commandData.length == 2) {
             // Validate
             if (responseData[0] != 0x41 || commandData[1] != responseData[1])
-                throw new CommandFailedException("Got illegal response for a query. Response " + OBDDataToString(responseData));
+                throw new OBDResponseErrorException("Got illegal response for a query. Response " + OBDDataToString(responseData));
 
             // Remove query header
             queryHeaderLength = 2;
         } else if (commandData[0] == 0x02 && commandData.length == 2) {
             // Validate
             if (responseData[0] != 0x42 || commandData[1] != responseData[1])
-                throw new CommandFailedException("Got illegal response for a query. Response " + OBDDataToString(responseData));
+                throw new OBDResponseErrorException("Got illegal response for a query. Response " + OBDDataToString(responseData));
 
             // Remove query header
             queryHeaderLength = 2;
         } else if (commandData[0] == 0x03) {
             // Validate
             if (responseData[0] != 0x43)
-                throw new CommandFailedException("Got illegal response for a query. Response " + OBDDataToString(responseData));
+                throw new OBDResponseErrorException("Got illegal response for a query. Response " + OBDDataToString(responseData));
 
             // Remove query header
             queryHeaderLength = 1;
         }  else if (commandData[0] == 0x05  && commandData.length == 3) {
             // Validate
             if (responseData[0] != 0x43 || commandData[1] != responseData[1] || commandData[2] != responseData[2])
-                throw new CommandFailedException("Got illegal response for a query. Response " + OBDDataToString(responseData));
+                throw new OBDResponseErrorException("Got illegal response for a query. Response " + OBDDataToString(responseData));
 
             // Remove query header
             queryHeaderLength = 3;
         } else if (commandData[0] == 0x09 && commandData.length == 2) {
             // Validate
             if (responseData[0] != 0x49 || commandData[1] != responseData[1])
-                throw new CommandFailedException("Got illegal response for a query. Response " + OBDDataToString(responseData));
+                throw new OBDResponseErrorException("Got illegal response for a query. Response " + OBDDataToString(responseData));
 
             // Remove query header
             queryHeaderLength = 2;
@@ -1363,11 +1419,11 @@ public final class OBDLinkManager {
 
         // Remove header
         final byte[] returnData = new byte[responseData.length - queryHeaderLength];
-        System.arraycopy(returnData, 0, responseData, queryHeaderLength, returnData.length);
+        System.arraycopy(responseData, queryHeaderLength, returnData, 0, returnData.length);
         return returnData;
     }
 
-    private void activateOBD(final BluetoothSocket socket) throws CommandFailedException, VehiclePowerStateInterruptException {
+    private void warmupOBD(final BluetoothSocket socket) throws CommandFailedException, VehiclePowerStateInterruptException {
         Log.i(LOG_TAG, "Warming up vehicle OBD");
 
         try {
@@ -1380,25 +1436,43 @@ public final class OBDLinkManager {
             Log.e(LOG_TAG, "Target vehicle OBD warmup failed, error = " + ex.getMessage());
             throw ex;
         }
+    }
+    
+    private byte[] queryOBDCapabilityData(final BluetoothSocket socket, final String command) throws CommandFailedException, VehiclePowerStateInterruptException {
+		final byte[] fakeResult = { 0x00, 0x00, 0x00, 0x00 };
+		
+    	try {
+    		return queryOBDData(socket, command);
+    	} catch (OBDNegativeResponseException ex) {
+    		// Magic
+    		Log.e(LOG_TAG, "Target vehicle capability query failed, got negative response.");
+    		return fakeResult;
+    	} catch (OBDResponseErrorException ex) {
+        	// Capability query failed, fake it
+    		Log.e(LOG_TAG, "Target vehicle capability query failed, ignoring. Ex = " + ex.getMessage());
+    		return fakeResult;
+    	}
+    }
 
+    private void activateOBD(final BluetoothSocket socket) throws CommandFailedException, VehiclePowerStateInterruptException {
         // Vehicle seems to be ON, try query data
         Log.i(LOG_TAG, "Checking vehicle data");
 
         try {
             // Query supported 01-type IDs
             final byte[] support01Bits[] = {
-                    queryOBDData(socket, "0100\r"),
-                    queryOBDData(socket, "0120\r"),
-                    queryOBDData(socket, "0140\r"),
-                    queryOBDData(socket, "0160\r"),
-                    queryOBDData(socket, "0180\r"),
-                    queryOBDData(socket, "01A0\r"),
-                    queryOBDData(socket, "01C0\r"),
+                    queryOBDCapabilityData(socket, "0100\r"),
+                    queryOBDCapabilityData(socket, "0120\r"),
+                    queryOBDCapabilityData(socket, "0140\r"),
+                    queryOBDCapabilityData(socket, "0160\r"),
+                    queryOBDCapabilityData(socket, "0180\r"),
+                    queryOBDCapabilityData(socket, "01A0\r"),
+                    queryOBDCapabilityData(socket, "01C0\r"),
             };
 
             // Query supported 09-type IDs
             final byte[] support09Bits[] = {
-                    queryOBDData(socket, "0900\r"),
+            		queryOBDCapabilityData(socket, "0900\r"),
             };
 
             try {
@@ -1410,7 +1484,12 @@ public final class OBDLinkManager {
             }
 
             // Read VehicleID
-            m_vehicleID = queryAdapterString(socket, "0902\r");
+            try {
+            	m_vehicleID = convertOBDDataToString(queryOBDData(socket, "0902\r"));
+            } catch (OBDNegativeResponseException ex) {
+            	Log.e(LOG_TAG, "Could not query VIN.");
+            	m_vehicleID = "unknown";
+            }
 
             Log.i(LOG_TAG, "Implementation information query complete.");
             Log.i(LOG_TAG, "Connected to vehicle ID \"" + m_vehicleID + "\"");
@@ -1421,35 +1500,70 @@ public final class OBDLinkManager {
             throw ex;
         }
     }
+    
+    private String convertOBDDataToString(final byte[] data) {
+    	final StringBuilder buf = new StringBuilder();
+    	for (int ndx = 0; ndx < data.length; ++ndx)
+    		buf.append((char) data[ndx]);
+		return buf.toString();
+    }
 
     private void processQuery(final OBD2DataQuery query) throws TransportFailedException, VehicleShutdownException {
-        final String command = String.format("01%02X\r", query.getPID());
+        final String commandString = String.format("01%02X\r", query.getPID());
+        final byte[] commandData = new byte[] { 0x01, (byte) query.getPID() };
         final long queryStartTime = System.nanoTime();
         
-        // Write to the socket
-        if (!tryWriteToSocket(m_socket, command, BT_DATA_QUERY_TIMEOUT)) {
-        	// Failure means the connection was lost
-        	m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_NO_CONNECTION));
-            throw new TransportFailedException();
-        }
+        try
+        {
+	        // Write to the socket
+	        if (!tryWriteToSocket(m_socket, commandString, BT_DATA_QUERY_TIMEOUT))
+	            throw new TransportFailedException();
+	        
+	        // Read to result until prompt
+	        final String response = tryReadUntilPrompt(m_socket, BT_DATA_QUERY_TIMEOUT);
+	        if (response == null)
+	            throw new TransportFailedException();
 
-        try {
-    		final byte[] response = queryOBDData(m_socket, command);
     		final long queryTime = System.nanoTime() - queryStartTime;
     		
-    		if (response.length == query.getNumExpectedBytes())
-    			m_resultCallbackExecutor.execute(new DataQueryResponse(query, response, queryTime));
-    		else {
-    			// wrong number of bytes
-    			Log.i(LOG_TAG, "OBD data query returned unexpected number of bytes for query pid " + query.getPID() + "Expected " + query.getNumExpectedBytes() + ", got" + response.length);
-    			m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_QUERY_ERROR));
+	        // Magic values
+	        
+	        // No data?
+	        if (response.contains("NO DATA"))
+	            throw new CommandNoResultDataException("Failed to execute " + commandString + ": vehicle returned no data.");
+	
+	        // Changes to the pin 15 interrupted operation (Vehicle turned on/off)
+	        if (response.contains("STOPPED"))
+	            throw new VehiclePowerStateInterruptException();
+
+	        // Data is hexadecimal?
+	        final byte[] responseData = OBDHexStringToData(response);
+	        if (responseData == null || responseData.length == 0)
+	            throw new CommandFailedException("Failed to execute " + commandString + ": result data is not valid hex string. Response " + response);
+
+	        // Data is a response?
+	        final byte[] obdData = getOBDResponseData(commandData, responseData);
+	        
+	        // wrong number of bytes
+    		if (obdData.length != query.getNumExpectedBytes()) {
+    			Log.i(LOG_TAG, "OBD data query returned unexpected number of bytes for query pid " + query.getPID() + "Expected " + query.getNumExpectedBytes() + ", got" + obdData.length);
+    			throw new CommandFailedException("Got invalid number of response bytes");
     		}
+    		
+    		m_resultCallbackExecutor.execute(new DataQueryResponse(query, obdData, queryTime));
+        } catch (TransportFailedException ex) {
+        	// Failure means the connection was lost
+        	m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_NO_CONNECTION));
+        	throw ex;
         } catch (CommandNoResultDataException ex) {
             // no data
         	Log.i(LOG_TAG, "OBD data query returned NO DATA");
         	m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_QUERY_ERROR));
-        }
-        catch (VehiclePowerStateInterruptException ex) {
+        } catch (OBDNegativeResponseException ex) {
+            // no data
+        	Log.i(LOG_TAG, "OBD data query returned negative response");
+        	m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_QUERY_ERROR));
+        } catch (VehiclePowerStateInterruptException ex) {
             // interrupted, check if power state is changed?
         	Log.i(LOG_TAG, "OBD data query was interrupted by a power state change, querying new power state");
         	
@@ -1467,8 +1581,7 @@ public final class OBDLinkManager {
         		
         		// all ok, just something weird going on
         		return;
-        	} catch (CommandFailedException innerEx)
-        	{
+        	} catch (CommandFailedException innerEx) {
         		Log.i(LOG_TAG, "Power state query failed, ex = " + innerEx.getMessage());
         		
         		// data is broken lost connection
@@ -1476,16 +1589,15 @@ public final class OBDLinkManager {
         	}
         }
         catch (CommandFailedException ex) {
-            // something went wrong? our connection?
+            // something went wrong. Check connection
+        	m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_QUERY_ERROR));
+        	
         	Log.i(LOG_TAG, "OBD data query failed, unknown reason, ex = " + ex.getMessage());
         	
         	if (!m_socket.isConnected()) {
             	Log.i(LOG_TAG, "Connection was lost");
         		throw new TransportFailedException();
         	}
-        	
-        	// weird...
-        	return;
         }
     }
 }
