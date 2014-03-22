@@ -638,15 +638,21 @@ public final class OBDLinkManager {
 
             for (int recoveryAttempt = 0; ; ++recoveryAttempt) {
                 try {
+                	// Start connctiont with a hard reset
+                	if (recoveryAttempt == 0) {
+                		tryWriteToSocket(socket, "ATZ\r", BT_DATA_QUERY_LONG_TIMEOUT);
+                        clearBufferedMessages(socket, true);
+                	}
+                	
                     if (configureConnection(socket))
                         break;
 
                     // Protocol configuration failed, this is sometimes
                     // recoverable with reset. Try to recover.
-                    Log.e(LOG_TAG, "Adapter configuration failed, attempt number  " + Integer.toString(recoveryAttempt));
+                    Log.e(LOG_TAG, "Protocol configuration failed, attempt number  " + Integer.toString(recoveryAttempt));
 
                     if (recoveryAttempt >= numRecoveryAttempts) {
-                        Log.e(LOG_TAG, "Adapter configuration failed, could not recover");
+                        Log.e(LOG_TAG, "Protocol configuration failed, could not recover");
                         throw new RuntimeException("Protocol configuration failed");
                     }
                 } catch (VehiclePowerStateInterruptException ex) {
@@ -668,11 +674,15 @@ public final class OBDLinkManager {
                     final int resetTimeout = 1000; // ms
                     recoverRetryDelay = 300; // ms
 
+                    Log.i(LOG_TAG, "Protocol configuration failed, sending soft reset");
+                    
                     tryWriteToSocket(socket, "ATWS\r", resetTimeout);
                     clearBufferedMessages(socket, true);
                 } else {
                     final int resetTimeout = 2000; // ms
                     recoverRetryDelay = 3000; // ms
+
+                    Log.i(LOG_TAG, "Protocol configuration failed, sending hard reset");
 
                     tryWriteToSocket(socket, "ATZ\r", resetTimeout);
                     clearBufferedMessages(socket, true);
