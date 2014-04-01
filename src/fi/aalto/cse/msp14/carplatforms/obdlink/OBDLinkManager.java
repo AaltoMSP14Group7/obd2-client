@@ -902,7 +902,7 @@ public final class OBDLinkManager {
 			writeHandshakeAndExpectResponse(socket, "ATAL\r", "OK", ResponseVerification.AllowMatch);
 
 			// Set default timeout to 25 x 4ms = 100ms.
-			writeHandshakeAndExpectResponse(socket, "ATST25\r", "OK", ResponseVerification.AllowMatch);
+			writeHandshakeAndExpectResponse(socket, "ATST19\r", "OK", ResponseVerification.AllowMatch);
 		} catch (CommandFailedException ex) {
 			Log.e(LOG_TAG, "Protocol configuration failed, error = " + ex.getMessage());
 			return false;
