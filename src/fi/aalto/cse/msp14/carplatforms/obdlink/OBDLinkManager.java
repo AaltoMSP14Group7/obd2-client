@@ -29,7 +29,7 @@ import fi.aalto.cse.msp14.carplatforms.obdlink.OBDLinkManager.OBD2DataQuery.Erro
 public final class OBDLinkManager {
 	private static final long			BT_ADAPTER_START_TIMEOUT		= 4000; // ms
 	private static final long			BT_DATA_QUERY_TIMEOUT			= 400; // ms
-	private static final long			BT_DATA_QUERY_LONG_TIMEOUT		= 2500; // ms
+	private static final long			BT_DATA_QUERY_LONG_TIMEOUT		= 5000; // ms
 	private static final String			LOG_TAG							= "OBDLinkManager";
 
 	private static OBDLinkManager		s_instance;
@@ -48,7 +48,6 @@ public final class OBDLinkManager {
 
 	private BluetoothSocket				m_socket;
 	private LinkState					m_state							= LinkState.STATE_OFF;
-	private String						m_adapterType;
 	private String						m_vehicleID;
 	private boolean						m_vehiclePowerState;
 
@@ -889,11 +888,6 @@ public final class OBDLinkManager {
 			// Disable linefeed after each result, we get \r anyway so it doesn't matter anyway
 			writeHandshakeAndExpectResponse(socket, "ATL0\r", "OK", ResponseVerification.AllowSubstring);
 
-			// Set protocol to AUTO
-			writeHandshakeAndExpectResponse(socket, "ATPC\r", null, ResponseVerification.AllowAnything);
-			writeHandshakeAndExpectResponse(socket, "ATSP0\r", "OK", ResponseVerification.AllowSubstring);
-			writeHandshakeAndExpectResponse(socket, "ATDP\r", "AUTO", ResponseVerification.AllowSubstring);
-
 			// Disable whitespace between result values, we split them ourselves
 			// This is a v1.3 command, "?" result is fine too
 			writeHandshakeAndExpectResponse(socket, "ATS0\r", null, ResponseVerification.AllowAnything);
@@ -903,38 +897,107 @@ public final class OBDLinkManager {
 
 			// Set default timeout to 25 x 4ms = 100ms.
 			writeHandshakeAndExpectResponse(socket, "ATST19\r", "OK", ResponseVerification.AllowMatch);
+			
+			// Ask device to identify itself
+			final String adapterType = queryAdapterString(socket, "ATI\r");
+			Log.i(LOG_TAG, "Connected to adapter \"" + adapterType + "\"");
 		} catch (CommandFailedException ex) {
 			Log.e(LOG_TAG, "Protocol configuration failed, error = " + ex.getMessage());
 			return false;
 		}
+		
+		Log.i(LOG_TAG, "Adapter link protocol configured, configuring adapter-vehicle OBD protocol.");
+		
+		// configure protocol by trying them all in order
+		// if all protocols fail, assume that the ECU is offline
+		// i.e. the engine power is off
+		
+		final boolean adapterClaimsVehicleOn;
+		
+		try {
+			adapterClaimsVehicleOn = queryVehiclePowerState(socket);
+		} catch (CommandFailedException ex) {
+			Log.e(LOG_TAG, "Power query failed, error = " + ex.getMessage());
+			return false;
+		}
+		
+		boolean protocolConfigured = false;
+		if (adapterClaimsVehicleOn)
+		{
+			final class ProtocolInfo {
+				final public boolean m_auto;
+				final public String m_code;
+				final public String m_description;
+				
+				ProtocolInfo(final boolean automatic, final String code, final String description) {
+					m_auto = automatic;
+					m_code = code;
+					m_description = description;
+				}
+			};
+			
+			final ProtocolInfo testProtocols[] =
+			{
+				new ProtocolInfo(true,  "0", "Automatic"),
+				new ProtocolInfo(false, "1", "SAE J1850 PWM"),
+				new ProtocolInfo(false, "2", "SAE J1850 VPW"),
+				new ProtocolInfo(false, "3", "ISO 9141-2"),
+				new ProtocolInfo(false, "4", "ISO 14230-4 KWP"),
+				new ProtocolInfo(false, "5", "ISO 14230-4 KWP (fast init)"),
+				new ProtocolInfo(false, "6", "ISO 15765-4 CAN (11bit, 500kbaud)"),
+				new ProtocolInfo(false, "7", "ISO 15765-4 CAN (29bit, 500kbaud)"),
+				new ProtocolInfo(false, "8", "ISO 15765-4 CAN (11bit, 250kbaud)"),
+				new ProtocolInfo(false, "9", "ISO 15765-4 CAN (29bit, 250kbaud)"),
+				new ProtocolInfo(false, "A", "SAE J939 CAN"),
+			};
+			
+			for (final ProtocolInfo protocol : testProtocols)
+			{
+				Log.i(LOG_TAG, "Trying protocol " + protocol.m_description);
+				
+				try {
+					// Set protocol
+					writeHandshakeAndExpectResponse(socket, "ATPC\r", null, ResponseVerification.AllowAnything);
+					writeHandshakeAndExpectResponse(socket, "ATSP" + protocol.m_code + "\r", "OK", ResponseVerification.AllowSubstring);
+					
+					// Just for logs
+					writeHandshakeAndExpectResponse(socket, "ATDP\r", null, ResponseVerification.AllowAnything);
+				} catch (CommandFailedException ex) {
+					Log.i(LOG_TAG, "Adapter protocol set failed,");
+					return false;
+				}
+				
+				// Test if protocol works
+				
+				try {
+					// Answer is not interesting, only if the queries succeeded or not.
+					// First query might take longer in automatic as the adapter iterates
+					// all protocols
+					final long firstTimeout = (protocol.m_auto) ? (3*BT_DATA_QUERY_LONG_TIMEOUT) : (BT_DATA_QUERY_LONG_TIMEOUT);
+					queryAdapterString(socket, "0100\r", firstTimeout);
+					queryAdapterString(socket, "0900\r", BT_DATA_QUERY_LONG_TIMEOUT);
+				} catch (CommandFailedException ex) {
+					// Protocol failed, clear garbage
+					clearBufferedMessages(socket, false);
+					Log.i(LOG_TAG, "Protocol failed, trying next");
+					continue;
+				}
+				
+				// protocol works, the vehicle is on
+				Log.i(LOG_TAG, "Protocol found, using protocol " + protocol.m_description);
+				protocolConfigured = true;
+				break;
+			}
+		}
 
+		// Could not find working protocol, assume the vehicle is asleep
+		
 		Log.i(LOG_TAG, "Protocol configured, requesting implementation information.");
-		final boolean vehiclePowerState;
-
-		try {
-			warmupOBD(socket);
-		} catch (CommandFailedException ex) {
-			// Warmup failed, :(
-			return false;
-		}
+		Log.i(LOG_TAG, "Vehicle power state = " + protocolConfigured);
 		
+		m_vehiclePowerState = false;
 		
-		try {
-			// Ask device to identify itself
-			m_adapterType = queryAdapterString(socket, "ATI\r");
-
-			// Query vehicle power state
-			vehiclePowerState = queryVehiclePowerState(socket);
-
-			Log.i(LOG_TAG, "Implementation information query complete.");
-			Log.i(LOG_TAG, "Connected to adapter \"" + m_adapterType + "\"");
-			Log.i(LOG_TAG, "Vehicle power state = " + vehiclePowerState);
-		} catch (CommandFailedException ex) {
-			Log.e(LOG_TAG, "Target device information failed, error = " + ex.getMessage());
-			return false;
-		}
-		
-		if (vehiclePowerState) {
+		if (protocolConfigured) {
 			// Try to activate OBD
 			try {
 				activateOBD(socket);
@@ -1220,28 +1283,21 @@ public final class OBDLinkManager {
 		return response.trim();
 	}
 
+	/**
+	 * Does the adapter claim the vehicle is on, WILL PRODUCE
+	 * FALSE-POSITIVES! Use checkVehiclePowerState to find out
+	 * the real state 
+	 */
 	private boolean queryVehiclePowerState(final BluetoothSocket socket) throws CommandFailedException {
-		// Workaround for lying adapters
-
 		final int numAttempts = 3;
 		for (int attempt = 0; attempt < numAttempts; ++attempt) {
 			try {
 				final String powerState = queryAdapterString(socket, "ATIGN\r");
 
-				if (powerState.equals("ON")) {
-					// Adapters sometimes lie, test query supported pids (this might be the first query, increse timeout")
-					try {
-						queryAdapterString(socket, "0100\r", BT_DATA_QUERY_LONG_TIMEOUT);
-						return true;
-					} catch (CommandFailedException ex) {
-						// IGN is ON, but ECU is not on
-						Log.i(LOG_TAG, "Adapter claimed power is on, but queries still fail. Assuming no power. ex = " + ex.getMessage());
-						return false;
-					}
-				}
-				else if (powerState.equals("OFF")) {
+				if (powerState.equals("ON"))
+					return true;
+				else if (powerState.equals("OFF"))
 					return false;
-				}
 				else
 					throw new CommandFailedException("Sent ATIGN, expected ON or OFF, got \"" + powerState + "\"");
 			} catch (VehiclePowerStateInterruptException ex) {
@@ -1249,7 +1305,38 @@ public final class OBDLinkManager {
 				Log.i(LOG_TAG, "Adapter power state change interrupted power state query, attempt number " + Integer.toString(attempt));
 			}
 		}
+		
+		throw new CommandFailedException("Too many power state changes during power state query");
+	}
+	
+	/**
+	 * Is the vehicle online. NOTE! Requires configured protocol
+	 */
+	private boolean checkVehiclePowerState(final BluetoothSocket socket) throws CommandFailedException {
+		
+		// When adapter says NO, it means NO
+		if (queryVehiclePowerState(socket) == false)
+			return false;
+		
+		// When adapter says Yes, it means Maybe
+		// => Workaround for lying adapters
 
+		final int numAttempts = 3;
+		for (int attempt = 0; attempt < numAttempts; ++attempt) {
+			// Adapters sometimes lie, test query supported pids (this might be the first query, increse timeout")
+			try {
+				queryAdapterString(socket, "0100\r", BT_DATA_QUERY_LONG_TIMEOUT);
+				return true;
+			} catch (CommandFailedException ex) {
+				// IGN is ON, but ECU is not on
+				Log.i(LOG_TAG, "Adapter claimed power is on, but queries still fail. Assuming no power. ex = " + ex.getMessage());
+				return false;
+			} catch (VehiclePowerStateInterruptException ex) {
+				clearBufferedMessages(socket, false);
+				Log.i(LOG_TAG, "Adapter power state change interrupted power state verification, attempt number " + Integer.toString(attempt));
+			}
+		}
+		
 		throw new CommandFailedException("Too many power state changes during power state query");
 	}
 
