@@ -8,14 +8,14 @@ import android.widget.*;
 import fi.aalto.cse.msp14.carplatforms.obdlink.OBDLinkManager;
 
 public class DemoActivity extends Activity {
-    class LinkStateListener implements OBDLinkManager.LinkStateEventListener {
+    class LinkStateListener implements OBDLinkManager.StateEventListener {
 
         @Override
-        public void onStateChange(final OBDLinkManager.LinkState state, final String reason) {
+        public void onStateChange(final OBDLinkManager.LinkState state, final boolean powerState, final String reason) {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    ((TextView) findViewById(R.id.txtConnectStatus)).setText("state = " + state.toString() + " reason = " + reason);
+                    ((TextView) findViewById(R.id.txtConnectStatus)).setText("state = " + state.toString() + "\npower state = " + powerState + "\nreason = " + reason);
 
                     if (state == OBDLinkManager.LinkState.STATE_TURNING_ON)
                         (findViewById(R.id.progressConnection)).setVisibility(ProgressBar.VISIBLE);
@@ -64,7 +64,7 @@ public class DemoActivity extends Activity {
             public void onResult(byte[] result, long queryDelayNanoSeconds) {
                 onAnything();
 
-                setText( Integer.toString((result[0] * 256 + result[1]) / 4) );
+                setText( Integer.toString((result[0] * 256 + result[1]) / 4) + ", query time = " + (queryDelayNanoSeconds/1000) + "us" );
             }
 
             @Override

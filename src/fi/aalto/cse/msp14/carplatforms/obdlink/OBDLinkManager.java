@@ -42,7 +42,7 @@ public final class OBDLinkManager {
 	private final Thread				m_serviceThread;
 	private final Object				m_stateLock						= new Object();
 	private final LinkedBlockingQueue<LinkThreadTask> m_serviceTasks	= new LinkedBlockingQueue<LinkThreadTask>();
-	private final LinkedList<LinkStateEventListener> m_listeners		= new LinkedList<LinkStateEventListener>();
+	private final LinkedList<StateEventListener> m_listeners			= new LinkedList<StateEventListener>();
 	private final OBDCapabilityBitSet	m_obd01CapabilityBitSet			= new OBDCapabilityBitSet();
 	private final OBDCapabilityBitSet	m_obd09CapabilityBitSet			= new OBDCapabilityBitSet();
 
@@ -192,8 +192,8 @@ public final class OBDLinkManager {
 		abstract public void onError(final ErrorType type);
 	}
 
-	public static interface LinkStateEventListener {
-		abstract void onStateChange(final LinkState state, final String reason);
+	public static interface StateEventListener {
+		abstract void onStateChange(final LinkState linkState, final boolean powerState, final String reason);
 	}
 
 	private class BTStateChangeReceiver extends BroadcastReceiver {
@@ -341,14 +341,14 @@ public final class OBDLinkManager {
 	/**
 	 * Inserts new state listener
 	 */
-	public void addEventListener(final LinkStateEventListener listener) {
+	public void addEventListener(final StateEventListener listener) {
 		m_listeners.add(listener);
 	}
 
 	/**
 	 * Removes existing state listener or fails silently
 	 */
-	public void removeEventListener(final LinkStateEventListener listener) {
+	public void removeEventListener(final StateEventListener listener) {
 		m_listeners.remove(listener);
 	}
 
@@ -385,20 +385,22 @@ public final class OBDLinkManager {
 
 	private void changeState(final LinkState state, final String reason) {
 		class CallbackStateTask implements Runnable {
-			private final LinkStateEventListener m_listener;
+			private final StateEventListener m_listener;
 			private final LinkState m_state;
+			private final boolean m_powerState;
 			private final String m_reason;
 
-			CallbackStateTask(LinkStateEventListener listener, LinkState state, String reason) {
+			CallbackStateTask(StateEventListener listener, LinkState state, boolean powerState, String reason) {
 				m_listener = listener;
 				m_state = state;
+				m_powerState = powerState;
 				m_reason = reason;
 			}
 
 			@Override
 			public void run() {
 				try {
-					m_listener.onStateChange(m_state, m_reason);
+					m_listener.onStateChange(m_state, m_powerState, m_reason);
 				} catch (RuntimeException ex) {
 					// log and rethrow
 					Log.e(LOG_TAG, "State change listener unhandled exception", ex);
@@ -410,14 +412,14 @@ public final class OBDLinkManager {
 		synchronized (m_stateLock) {
 			m_state = state;
 
-			Log.i(LOG_TAG, "State changed to " + m_state.toString() + ", reason = " + reason);
+			Log.i(LOG_TAG, "State changed to " + m_state.toString() + ", power state = " + m_vehiclePowerState + ", reason = " + reason);
 
 			// Inform listeners. Callbacks might modify container, lets be extra careful
 			@SuppressWarnings("unchecked")
-			final LinkedList<LinkStateEventListener> listeners = (LinkedList<LinkStateEventListener>) m_listeners.clone();
+			final LinkedList<StateEventListener> listeners = (LinkedList<StateEventListener>) m_listeners.clone();
 
-			for (LinkStateEventListener listener : listeners)
-				m_generalCallbackExecutor.execute(new CallbackStateTask(listener, m_state, reason));
+			for (StateEventListener listener : listeners)
+				m_generalCallbackExecutor.execute(new CallbackStateTask(listener, m_state, m_vehiclePowerState, reason));
 		}
 	}
 
@@ -468,8 +470,6 @@ public final class OBDLinkManager {
 						// We have failed, inform listeners
 						changeState(LinkState.STATE_OFF, ex.getMessage());
 					}
-					
-					// TODO: Power state event
 				} else {
 					// never happens
 					Log.wtf(LOG_TAG, "m_state is not valid for this state");
@@ -524,7 +524,6 @@ public final class OBDLinkManager {
 						communicating = false;
 
 						changeState(LinkState.STATE_OFF, "user action");
-						// TODO: Power state event
 						break;
 					}
 					case STATE_ON: {
@@ -547,7 +546,10 @@ public final class OBDLinkManager {
 										communicating = true;
 										
 										Log.i(LOG_TAG, "Recovery succeeded");
-										// TODO: power state event
+										
+										// "change" state to inform listeners about possible vehicle power state
+										// change
+										changeState(LinkState.STATE_ON, "automatic quick reconnect");
 									} catch (RuntimeException innerEx) {
 										Log.i(LOG_TAG, "Recovery failed, ex = " + ex.getMessage());
 										
@@ -555,7 +557,6 @@ public final class OBDLinkManager {
 										communicating = false;
 
 										changeState(LinkState.STATE_OFF, "transport failure");
-										// TODO: power state event
 									}
 								} else {
 									// Connection died
@@ -565,13 +566,14 @@ public final class OBDLinkManager {
 									communicating = false;
 									
 									changeState(LinkState.STATE_OFF, "transport failure");
-									// TODO: Power state event
 								}
 							} catch (VehicleShutdownException e) {
 								// Vehicle was shut down
 								m_vehiclePowerState = false;
 								
-								// TODO: Power state event
+								// Send power state event
+								changeState(LinkState.STATE_ON, "Possible vehicle shutdown");
+								
 								// TODO: Wakeup beacons
 							}
 						}
@@ -589,6 +591,9 @@ public final class OBDLinkManager {
 
 		// Shutdown
 
+		// avoid "weird" state updates like STATE_OFF, ENGINE_ON
+		m_vehiclePowerState = false;
+		
 		// Inform listeners, but don't duplicate messages
 		synchronized (m_stateLock) {
 			if (m_state != LinkState.STATE_OFF)
@@ -717,7 +722,9 @@ public final class OBDLinkManager {
 
 	private void killOBD2Link() {
 		Log.i(LOG_TAG, "killOBD2Link() called()");
-
+		
+		m_vehiclePowerState = false;
+		
 		// Shut down connection, existing jobs are now terminated
 		try {
 			if (m_socket != null)
