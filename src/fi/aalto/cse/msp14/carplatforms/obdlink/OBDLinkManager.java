@@ -989,7 +989,13 @@ public final class OBDLinkManager {
 					// all protocols
 					final long firstTimeout = (protocol.m_auto) ? (3*BT_DATA_QUERY_LONG_TIMEOUT) : (BT_DATA_QUERY_LONG_TIMEOUT);
 					queryAdapterString(socket, "0100\r", firstTimeout);
-					queryAdapterString(socket, "0900\r", BT_DATA_QUERY_LONG_TIMEOUT);
+					
+					// Just "warm up" 09-range. It doesn't matter if we fail or succeed
+					try {
+						queryAdapterString(socket, "0900\r", BT_DATA_QUERY_LONG_TIMEOUT);
+					} catch (CommandFailedException ex) {
+						// suppress
+					}
 				} catch (CommandFailedException ex) {
 					// Protocol failed, clear garbage
 					clearBufferedMessages(socket, false);
