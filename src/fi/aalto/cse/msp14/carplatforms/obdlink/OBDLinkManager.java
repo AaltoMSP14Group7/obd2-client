@@ -1137,6 +1137,7 @@ public final class OBDLinkManager {
 			writeSuccessful = writeFuture.get(timeout, TimeUnit.MILLISECONDS);
 		} catch (TimeoutException ex) {
 			// timed out while writing
+			Log.d(LOG_TAG, "Timed out while writing, timeout = " + timeout + "ms");
 			return false;
 		} catch (Exception ex) {
 			// unexpected
@@ -1271,6 +1272,10 @@ public final class OBDLinkManager {
 		if (response == null)
 			throw new CommandFailedException("Failed to execute " + command + ": read failed.");
 
+		// Error
+		if (response.contains("ERROR") || response.contains("UNABLE TO CONNECT"))
+			throw new CommandFailedException("Failed to execute " + command + ": adapter error.");
+		
 		// No data?
 		if (response.contains("NO DATA"))
 			throw new CommandNoResultDataException("Failed to execute " + command + ": vehicle returned no data.");
@@ -1286,7 +1291,7 @@ public final class OBDLinkManager {
 	/**
 	 * Does the adapter claim the vehicle is on, WILL PRODUCE
 	 * FALSE-POSITIVES! Use checkVehiclePowerState to find out
-	 * the real state 
+	 * the real state
 	 */
 	private boolean queryVehiclePowerState(final BluetoothSocket socket) throws CommandFailedException {
 		final int numAttempts = 3;
