@@ -86,6 +86,13 @@ public final class OBDLinkManager {
 	}
 
 	@SuppressWarnings("serial")
+	private static class AdapterResponseErrorException extends CommandFailedException {
+		AdapterResponseErrorException(String detailMessage) {
+			super(detailMessage);
+		}
+	}
+	
+	@SuppressWarnings("serial")
 	private static final class VehiclePowerStateInterruptException extends Exception {
 	}
 	
@@ -1294,7 +1301,7 @@ public final class OBDLinkManager {
 
 		// Error
 		if (response.contains("ERROR") || response.contains("UNABLE TO CONNECT"))
-			throw new CommandFailedException("Failed to execute " + command + ": adapter error.");
+			throw new AdapterResponseErrorException("Failed to execute " + command + ": adapter error.");
 		
 		// No data?
 		if (response.contains("NO DATA"))
@@ -1571,7 +1578,7 @@ public final class OBDLinkManager {
 			return fakeResult;
 		} catch (OBDResponseErrorException ex) {
 			// Capability query failed, fake it
-			Log.e(LOG_TAG, "Target vehicle capability query failed, ignoring. Ex = " + ex.getMessage());
+			Log.e(LOG_TAG, "Target vehicle capability query failed (OBD2 response), ignoring. Ex = " + ex.getMessage());
 			return fakeResult;
 		}
 	}
@@ -1609,7 +1616,7 @@ public final class OBDLinkManager {
 			try {
 				m_vehicleID = convertOBDDataToString(queryOBDData(socket, "0902\r"));
 			} catch (OBDNegativeResponseException ex) {
-				Log.e(LOG_TAG, "Could not query VIN.");
+				Log.e(LOG_TAG, "Could not query VIN, negative response.");
 				m_vehicleID = "unknown";
 			}
 
