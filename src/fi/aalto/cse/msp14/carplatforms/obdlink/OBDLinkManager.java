@@ -524,6 +524,7 @@ public final class OBDLinkManager {
 						communicating = false;
 
 						changeState(LinkState.STATE_OFF, "user action");
+						// TODO: Power state event
 						break;
 					}
 					case STATE_ON: {
@@ -546,6 +547,7 @@ public final class OBDLinkManager {
 										communicating = true;
 										
 										Log.i(LOG_TAG, "Recovery succeeded");
+										// TODO: power state event
 									} catch (RuntimeException innerEx) {
 										Log.i(LOG_TAG, "Recovery failed, ex = " + ex.getMessage());
 										
@@ -553,6 +555,7 @@ public final class OBDLinkManager {
 										communicating = false;
 
 										changeState(LinkState.STATE_OFF, "transport failure");
+										// TODO: power state event
 									}
 								} else {
 									// Connection died
@@ -562,10 +565,14 @@ public final class OBDLinkManager {
 									communicating = false;
 									
 									changeState(LinkState.STATE_OFF, "transport failure");
+									// TODO: Power state event
 								}
 							} catch (VehicleShutdownException e) {
 								// Vehicle was shut down
+								m_vehiclePowerState = false;
+								
 								// TODO: Power state event
+								// TODO: Wakeup beacons
 							}
 						}
 						break;
@@ -1659,8 +1666,11 @@ public final class OBDLinkManager {
 			throw ex;
 		} catch (CommandNoResultDataException ex) {
 			// no data
-			Log.i(LOG_TAG, "OBD data query returned NO DATA");
+			Log.i(LOG_TAG, "OBD data query returned NO DATA, verifying vehicle power state");
 			m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_QUERY_ERROR));
+			
+			// this might be caused by poweroff
+			verifyVehiclePowerOn();
 		} catch (OBDNegativeResponseException ex) {
 			// no data
 			Log.i(LOG_TAG, "OBD data query returned negative response");
@@ -1668,27 +1678,10 @@ public final class OBDLinkManager {
 		} catch (VehiclePowerStateInterruptException ex) {
 			// interrupted, check if power state is changed?
 			Log.i(LOG_TAG, "OBD data query was interrupted by a power state change, querying new power state");
-			
 			m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_QUERY_ERROR));
 			
 			// Test power state
-			try
-			{
-				final boolean newPowerState = queryVehiclePowerState(m_socket);
-				Log.i(LOG_TAG, "Vehicle new power state = " + newPowerState);
-				
-				// power was on when this function was called
-				if (newPowerState == false)
-					throw new VehicleShutdownException();
-				
-				// all ok, just something weird going on
-				return;
-			} catch (CommandFailedException innerEx) {
-				Log.i(LOG_TAG, "Power state query failed, ex = " + innerEx.getMessage());
-				
-				// data is broken lost connection
-				throw new TransportFailedException();
-			}
+			verifyVehiclePowerOn();
 		}
 		catch (CommandFailedException ex) {
 			// something went wrong. Check connection
@@ -1700,6 +1693,25 @@ public final class OBDLinkManager {
 				Log.i(LOG_TAG, "Connection was lost");
 				throw new TransportFailedException();
 			}
+		}
+	}
+	
+	private void verifyVehiclePowerOn() throws VehicleShutdownException, TransportFailedException {
+		try
+		{
+			final boolean newPowerState = checkVehiclePowerState(m_socket);
+			Log.i(LOG_TAG, "Vehicle new power state = " + newPowerState);
+			
+			// power was on when this function was called
+			if (newPowerState == false)
+				throw new VehicleShutdownException();
+			
+			// all ok, just something weird going on
+		} catch (CommandFailedException innerEx) {
+			Log.i(LOG_TAG, "Power state query failed, ex = " + innerEx.getMessage());
+			
+			// data is broken lost connection
+			throw new TransportFailedException();
 		}
 	}
 }
