@@ -1372,23 +1372,6 @@ public final class OBDLinkManager {
 		throw new CommandFailedException("Too many power state changes during power state query");
 	}
 
-	private void warmupOBDQuery(final BluetoothSocket socket, final String command) throws CommandFailedException, VehiclePowerStateInterruptException {
-		// First queries may fail, just ignore
-		Log.i(LOG_TAG, "Warming up query, type = " + command);
-		try {
-			clearBufferedMessages(socket, false);
-			queryAdapterString(socket, command, BT_DATA_QUERY_LONG_TIMEOUT);
-			clearBufferedMessages(socket, true);
-		} catch (CommandNoResultDataException ex) {
-			// all ok
-			Log.i(LOG_TAG, "Ignoring errors no data");
-		} catch (CommandFailedException ex) {
-			// log error, rethrow
-			Log.i(LOG_TAG, "Got error during warmup, ex = " + ex.getMessage());
-			throw ex;
-		}
-	}
-
 	private byte[] queryOBDData(final BluetoothSocket socket, final String command) throws CommandFailedException, VehiclePowerStateInterruptException, OBDNegativeResponseException {
 		return queryOBDData(socket, command, BT_DATA_QUERY_TIMEOUT);
 	}
@@ -1550,21 +1533,6 @@ public final class OBDLinkManager {
 		final byte[] returnData = new byte[responseData.length - queryHeaderLength];
 		System.arraycopy(responseData, queryHeaderLength, returnData, 0, returnData.length);
 		return returnData;
-	}
-
-	private void warmupOBD(final BluetoothSocket socket) throws CommandFailedException, VehiclePowerStateInterruptException {
-		Log.i(LOG_TAG, "Warming up vehicle OBD");
-
-		try {
-			// First queries always contain "SEARCHING...", and it takes a long time.
-			// just query something and don't worry about results. Warmup all read pids
-
-			warmupOBDQuery(socket, "0100\r");
-			warmupOBDQuery(socket, "0900\r");
-		} catch (CommandFailedException ex) {
-			Log.e(LOG_TAG, "Target vehicle OBD warmup failed, error = " + ex.getMessage());
-			throw ex;
-		}
 	}
 	
 	private byte[] queryOBDCapabilityData(final BluetoothSocket socket, final String command) throws CommandFailedException, VehiclePowerStateInterruptException {
