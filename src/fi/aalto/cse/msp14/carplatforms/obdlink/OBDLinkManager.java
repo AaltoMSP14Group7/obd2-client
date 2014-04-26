@@ -1548,6 +1548,10 @@ public final class OBDLinkManager {
 			// Capability query failed, fake it
 			Log.e(LOG_TAG, "Target vehicle capability query failed (OBD2 response), ignoring. Ex = " + ex.getMessage());
 			return fakeResult;
+		} catch (CommandNoResultDataException ex) {
+			// Capability query failed, fake it
+			Log.e(LOG_TAG, "Target vehicle capability query failed, got no result, ignoring. Ex = " + ex.getMessage());
+			return fakeResult;
 		}
 	}
 
