@@ -4,9 +4,9 @@ import java.util.ArrayList;
 
 import org.w3c.dom.Element;
 
+import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDSourceDefinition;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.EvaluatorParseError;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.IValueEvaluator;
-import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.OBDSourceDefinition;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.ValueEvaluatorFactory;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.XmlDefinedValueEvaluator;
 

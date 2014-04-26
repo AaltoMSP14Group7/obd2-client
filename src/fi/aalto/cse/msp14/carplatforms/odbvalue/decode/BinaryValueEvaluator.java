@@ -4,6 +4,8 @@ import java.util.ArrayList;
 
 import org.w3c.dom.Element;
 
+import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDSourceDefinition;
+
 public abstract class BinaryValueEvaluator extends XmlDefinedValueEvaluator {
 	protected final IValueEvaluator m_left, m_right;
 	

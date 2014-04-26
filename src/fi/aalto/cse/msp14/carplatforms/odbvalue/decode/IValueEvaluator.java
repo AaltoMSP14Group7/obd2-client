@@ -14,10 +14,10 @@ public interface IValueEvaluator {
 		VOID
 	}
 	
-	/* package private */ static class EvaluationContext {
+	public static class EvaluationContext {
 		public final byte[] rawData;
 		
-		EvaluationContext (final byte[] rawData_) {
+		public EvaluationContext (final byte[] rawData_) {
 			rawData = rawData_;
 		}
 	}

@@ -5,8 +5,8 @@ import java.util.ArrayList;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Element;
 
+import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDSourceDefinition;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.EvaluatorParseError;
-import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.OBDSourceDefinition;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.XmlDefinedValueEvaluator;
 
 public class InputByteValueEvaluator extends XmlDefinedValueEvaluator {

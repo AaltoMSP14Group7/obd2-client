@@ -1,4 +1,4 @@
-package fi.aalto.cse.msp14.carplatforms.odbvalue.decode;
+package fi.aalto.cse.msp14.carplatforms.odbvalue;
 
 public final class OBDSourceDefinition {
 	public final String name;

@@ -2,9 +2,9 @@ package fi.aalto.cse.msp14.carplatforms.odbvalue.decode.evaluators;
 
 import org.w3c.dom.Element;
 
+import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDSourceDefinition;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.BinaryValueEvaluator;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.EvaluatorParseError;
-import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.OBDSourceDefinition;
 
 public class OrValueEvaluator extends BinaryValueEvaluator {
 
