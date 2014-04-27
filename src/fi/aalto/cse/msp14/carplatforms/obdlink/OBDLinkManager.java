@@ -1590,6 +1590,9 @@ public final class OBDLinkManager {
 			} catch (OBDNegativeResponseException ex) {
 				Log.e(LOG_TAG, "Could not query VIN, negative response.");
 				m_vehicleID = "unknown";
+			} catch (CommandNoResultDataException ex) {
+				Log.e(LOG_TAG, "Could not query VIN, no response.");
+				m_vehicleID = "unknown";
 			}
 
 			Log.i(LOG_TAG, "Implementation information query complete.");
