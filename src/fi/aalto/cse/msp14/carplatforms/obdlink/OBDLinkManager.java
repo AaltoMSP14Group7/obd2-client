@@ -1599,6 +1599,12 @@ public final class OBDLinkManager {
 			Log.i(LOG_TAG, "Connected to vehicle ID \"" + m_vehicleID + "\"");
 			Log.i(LOG_TAG, "Number of supported 01 PIDs = \"" + m_obd01CapabilityBitSet.getNumBitsSet() + "\"");
 			Log.i(LOG_TAG, "Number of supported 09 PIDs = \"" + m_obd09CapabilityBitSet.getNumBitsSet() + "\"");
+
+			Log.i(LOG_TAG, "Supported 01 pids:");
+			m_obd01CapabilityBitSet.logSupportedPIDs(LOG_TAG);
+			
+			Log.i(LOG_TAG, "Supported 09 pids:");
+			m_obd09CapabilityBitSet.logSupportedPIDs(LOG_TAG);
 		} catch (CommandFailedException ex) {
 			Log.e(LOG_TAG, "Target vehicle power state query failed, error = " + ex.getMessage());
 			throw ex;

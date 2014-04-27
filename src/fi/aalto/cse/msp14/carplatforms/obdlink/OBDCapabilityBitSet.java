@@ -2,6 +2,8 @@ package fi.aalto.cse.msp14.carplatforms.obdlink;
 
 import java.util.ArrayList;
 
+import android.util.Log;
+
 public class OBDCapabilityBitSet {
 	private ArrayList<Boolean> m_bits = new ArrayList<Boolean>();
 
@@ -13,8 +15,10 @@ public class OBDCapabilityBitSet {
 	};
 
 	public void clear() {
-		m_bits.clear();
+		// do not mutate existing list
+		m_bits = new ArrayList<Boolean>();
 	}
+	
 	public void setValue(final byte[] bits[]) throws InvalidBitSetException {
 		for (int i = 0; i < bits.length; ++i)
 			if (bits[i].length != 4)
@@ -49,5 +53,13 @@ public class OBDCapabilityBitSet {
 				++numBitsSet;
 
 		return numBitsSet;
+	}
+	
+	public void logSupportedPIDs (final String tag) {
+		final ArrayList<Boolean> bits = m_bits;
+		
+		for (int i = 0; i < bits.size(); ++i)
+			if (bits.get(i))
+				Log.i(tag, " -> id " + i + ", hex 0x" + Integer.toHexString(i));
 	}
 }
