@@ -35,13 +35,13 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	private boolean keepalive;
 	private boolean waitingForConnection;
 	
-	private LinkedBlockingQueue<CloudMessage> messages;
+	private LinkedBlockingQueue<SaveDataMessage> messages;
 	
 	private ConnectionListener conStateBCListener;
 	
 	private CloudConnection cloud;
 	
-	private CloudMessage current;
+	private SaveDataMessage current;
 	
 	private static CloudService instance;
 	
@@ -76,7 +76,7 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	public void onCreate() {
 		instance = this;
 		System.out.println("Joojoo");
-		messages = new LinkedBlockingQueue<CloudMessage>();
+		messages = new LinkedBlockingQueue<SaveDataMessage>();
 	}
 
 	  
@@ -132,8 +132,8 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	}
 	
 	@Override
-	public void sendMessage(String type, Object o) {
-		this.messages.offer(new CloudMessage(type, o));
+	public void sendMessage(SaveDataMessage message) {
+		this.messages.offer(message);
 		synchronized(cloud) {
 			cloud.notify();
 		}
@@ -177,7 +177,6 @@ public class CloudService extends Service implements ServerConnectionInterface {
 				if (current == null) {
 					current = CloudService.this.messages.poll();
 				}
-
 				if (current != null) { // If it is still null, then there is no use to send anything.
 					try {
 						System.out.println("Send ");
@@ -237,34 +236,6 @@ public class CloudService extends Service implements ServerConnectionInterface {
 				return true;
 			}
 			return false;
-		}
-	}
-	
-	/**
-	 * Just a holder of the info.
-	 * @author Maria
-	 *
-	 */
-	private class CloudMessage {
-		
-		private String type;
-		private Object obj;
-		private int tried;
-		
-		/**
-		 * 
-		 * @param type
-		 * @param o
-		 */
-		CloudMessage(String type, Object o) {
-			this.type = type;
-			this.obj = o;
-			tried = 0;
-		}
-
-		@Override
-		public String toString() {
-			return "CloudMessage [type=" + type + ", obj=" + obj + "]";
 		}
 	}
 }
