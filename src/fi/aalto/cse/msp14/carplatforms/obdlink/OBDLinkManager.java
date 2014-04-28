@@ -1539,7 +1539,34 @@ public final class OBDLinkManager {
 		final byte[] fakeResult = { 0x00, 0x00, 0x00, 0x00 };
 		
 		try {
-			return queryOBDData(socket, command);
+			final byte[] rawResult = queryOBDData(socket, command);
+
+			// Result is as specified
+			if (rawResult.length == 4)
+				return rawResult;
+			
+			// Illegal data, do some magic to work around QUALITY implementations
+			
+			if (rawResult.length < 4)
+			{
+				// Device returned too little data, fake rest as zeros
+				Log.i(LOG_TAG, "OBD capability query did not return enough data, expected 4 bytes, got " + rawResult.length + ". Filling missing data with 0x00");
+				
+				final byte[] filledResult = { 0x00, 0x00, 0x00, 0x00 };
+				System.arraycopy(rawResult, 0, filledResult, 0, rawResult.length);
+				
+				return filledResult;
+			}
+			else
+			{
+				// Device returned too much data, chopping
+				Log.i(LOG_TAG, "OBD capability query returned more data than expected, ignoring trailing bytes for compatibility. Expected 4 bytes, got " + rawResult.length);
+
+				final byte[] choppedResult = new byte[4];
+				System.arraycopy(rawResult, 0, choppedResult, 0, 4);
+
+				return choppedResult;
+			}
 		} catch (OBDNegativeResponseException ex) {
 			// Magic
 			Log.e(LOG_TAG, "Target vehicle capability query failed, got negative response.");
@@ -1654,13 +1681,22 @@ public final class OBDLinkManager {
 			// Data is a response?
 			final byte[] obdData = getOBDResponseData(commandData, responseData);
 			
-			// wrong number of bytes
-			if (obdData.length != query.getNumExpectedBytes()) {
-				Log.i(LOG_TAG, "OBD data query returned unexpected number of bytes for query pid " + query.getPID() + "Expected " + query.getNumExpectedBytes() + ", got" + obdData.length);
+			// not enough data (Allow more bytes, since some vehicles seem to emit more)
+			if (obdData.length < query.getNumExpectedBytes()) {
+				Log.i(LOG_TAG, "OBD data query returned unexpected number of bytes for query pid " + query.getPID() + ", expected (at least) " + query.getNumExpectedBytes() + ", got" + obdData.length);
 				throw new CommandFailedException("Got invalid number of response bytes");
 			}
 			
-			m_resultCallbackExecutor.execute(new DataQueryResponse(query, obdData, queryTime));
+			// chop trailing bytes out. Because magic.
+			final byte[] choppedObdData;
+			if (obdData.length != query.getNumExpectedBytes()) {
+				Log.i(LOG_TAG, "OBD data query returned more data than expected, ignoring trailing bytes for compatibility. Expected " + query.getNumExpectedBytes() + ", got " + obdData.length);
+				choppedObdData = new byte[query.getNumExpectedBytes()];
+				System.arraycopy(obdData, 0, choppedObdData, 0, query.getNumExpectedBytes());
+			} else
+				choppedObdData = obdData;
+			
+			m_resultCallbackExecutor.execute(new DataQueryResponse(query, choppedObdData, queryTime));
 		} catch (TransportFailedException ex) {
 			// Failure means the connection was lost
 			m_resultCallbackExecutor.execute(new DataQueryErrorResponse(query, ErrorType.ERROR_NO_CONNECTION));
