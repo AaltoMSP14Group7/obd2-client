@@ -36,20 +36,15 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	private boolean waitingForConnection;
 	
 	private LinkedBlockingQueue<SaveDataMessage> messages;
-	
 	private ConnectionListener conStateBCListener;
-	
 	private CloudConnection cloud;
-	
 	private SaveDataMessage current;
-	
 	private static CloudService instance;
 	
 	private boolean started = false; // One-way flag which represents if this service has already been started once.
 	
 	/**
 	 * 
-	 * @param context
 	 */
 	public CloudService() {
 		current = null;

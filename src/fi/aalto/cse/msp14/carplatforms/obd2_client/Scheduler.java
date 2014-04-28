@@ -76,23 +76,28 @@ public class Scheduler {
 	 * Pauses the timer temporarily. Though, this in fact cancels whole the timer because of Timer class' available methods.
 	 */
 	public void pause() {
-		running = false;
-		timer.cancel();
+		if (running) {
+			running = false;
+			timer.cancel();
+		}
 	}
 	
 	/**
 	 * This method is actually both start and resume.
+	 * Calling it multiple times should cause no problems.
 	 */
 	public void start() {
-		timer = new Timer();
-		synchronized(filters) {
-			ValueProviderTask task;
-			for (String key : filters.keySet()) {
-				task = filters.get(key);
-				timer.schedule(task, task.valueProvider.getQueryTickInterval(), task.valueProvider.getQueryTickInterval());
+		if (!running) {
+			timer = new Timer();
+			synchronized(filters) {
+				ValueProviderTask task;
+				for (String key : filters.keySet()) {
+					task = filters.get(key);
+					timer.schedule(task, task.valueProvider.getQueryTickInterval(), task.valueProvider.getQueryTickInterval());
+				}
 			}
+			running = true;
 		}
-		running = true;
 	}
 	
 	// TODO results. Or of course they could be sent to cloud service directly, too.
