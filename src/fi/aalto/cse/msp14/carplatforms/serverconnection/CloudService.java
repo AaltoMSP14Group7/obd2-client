@@ -45,6 +45,8 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	
 	private static CloudService instance;
 	
+	private boolean started = false; // One-way flag which represents if this service has already been started once.
+	
 	/**
 	 * 
 	 * @param context
@@ -82,13 +84,15 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	  
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
-		requestWakeLock();
-
-		cloud = new CloudConnection();
-		Thread t = new Thread(cloud);
-		t.setPriority(Process.THREAD_PRIORITY_BACKGROUND);
-		t.start();
-
+		if (!started) {
+			// Only fetch the lock if one does not exist yet!
+			started = true;
+			requestWakeLock();
+			cloud = new CloudConnection();
+			Thread t = new Thread(cloud);
+			t.setPriority(Process.THREAD_PRIORITY_BACKGROUND);
+			t.start();
+		}
 		return START_STICKY;
 	}
 
@@ -115,7 +119,8 @@ public class CloudService extends Service implements ServerConnectionInterface {
 		
 		if (wakelock != null) {
 			try {
-				wakelock.release(); 
+				wakelock.release();
+				wakelock = null;
 			} catch (Exception e) {
 				System.out.println(e.toString());
 				// Do nothing
