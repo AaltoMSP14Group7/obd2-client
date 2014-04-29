@@ -30,6 +30,8 @@ public final class OBDLinkManager {
 	private static final long			BT_ADAPTER_START_TIMEOUT		= 4000; // ms
 	private static final long			BT_DATA_QUERY_TIMEOUT			= 400; // ms
 	private static final long			BT_DATA_QUERY_LONG_TIMEOUT		= 5000; // ms
+	private static final long			BT_POWER_STATE_POLL_INTERVAL	= 5000; // ms, interval between queries that will detect on - off transition (these are cheap(-ish))
+	private static final long			BT_CONFIGURE_ATTEMPT_INTERVAL	= 60000; // ms, interval between queries that will cause unconfigured -> configured (these are EXPENSIVE)
 	private static final String			LOG_TAG							= "OBDLinkManager";
 
 	private static OBDLinkManager		s_instance;
@@ -50,6 +52,10 @@ public final class OBDLinkManager {
 	private LinkState					m_state							= LinkState.STATE_OFF;
 	private String						m_vehicleID;
 	private boolean						m_vehiclePowerState;
+	/** OBD protocol (AUTO, ISO, CAN etc) is found and capabilities queried */
+	private boolean						m_OBDProtocolConfigured;
+	private long						m_lastPowerStatePoll;
+	private long						m_lastConfigureAttempt;
 
 	public static enum LinkState {
 		STATE_TURNING_ON,
@@ -160,6 +166,14 @@ public final class OBDLinkManager {
 		// nada~
 	}
 
+	private static final class OBD2PowerStateQuery implements LinkThreadTask {
+		// nada~
+	}
+
+	private static final class OBD2ConnectionConfigurationAttemptTask implements LinkThreadTask {
+		// nada~
+	}
+	
 	/**
 	 * After submitting OBD2DataQuery to the OBDLinkManager, OBD2DataQuery object
 	 * should not be modified by the caller.
@@ -417,16 +431,21 @@ public final class OBDLinkManager {
 		}
 
 		synchronized (m_stateLock) {
-			m_state = state;
+			// Null = "do no change". Useful for sending just power state changes 
+			if (state != null)
+				m_state = state;
+			
+			// To make things easier, claim power is off if we have no connection. Removes weird states like (TURNING_ON, ENGINE_ON)
+			final boolean claimedPowerState = (m_state == LinkState.STATE_ON) ? (m_vehiclePowerState) : (false);
 
-			Log.i(LOG_TAG, "State changed to " + m_state.toString() + ", power state = " + m_vehiclePowerState + ", reason = " + reason);
+			Log.i(LOG_TAG, "State changed to " + m_state.toString() + ", power state = " + claimedPowerState + ", reason = " + reason);
 
 			// Inform listeners. Callbacks might modify container, lets be extra careful
 			@SuppressWarnings("unchecked")
 			final LinkedList<StateEventListener> listeners = (LinkedList<StateEventListener>) m_listeners.clone();
-
+			
 			for (StateEventListener listener : listeners)
-				m_generalCallbackExecutor.execute(new CallbackStateTask(listener, m_state, m_vehiclePowerState, reason));
+				m_generalCallbackExecutor.execute(new CallbackStateTask(listener, m_state, claimedPowerState, reason));
 		}
 	}
 
@@ -465,7 +484,7 @@ public final class OBDLinkManager {
 						communicating = true;
 
 						// clear existing commands, there are only DummyTasks to wake up the thread
-						m_serviceTasks.clear();
+						clearPendingQueries(ErrorType.ERROR_NO_CONNECTION);
 
 						Log.i(LOG_TAG, "Connection established");
 
@@ -477,6 +496,9 @@ public final class OBDLinkManager {
 						// We have failed, inform listeners
 						changeState(LinkState.STATE_OFF, ex.getMessage());
 					}
+					
+					// Connection ok, power state is up-to-date
+					m_lastPowerStatePoll = System.nanoTime();
 				} else {
 					// never happens
 					Log.wtf(LOG_TAG, "m_state is not valid for this state");
@@ -486,121 +508,139 @@ public final class OBDLinkManager {
 			// If we are in ON mode, wait for tasks
 			if (communicating) {
 				final LinkThreadTask task;
-				final LinkState cachedState;
-
+ 
 				try {
-					task = m_serviceTasks.take();
+					task = getNextServiceTask();
+					
+					// timeout while waiting command
+					if (task == null)
+						continue mainServiceLoop;
 				} catch (InterruptedException e) {
 					// got interrupted, only happens at shutdown
 					break mainServiceLoop;
 				}
 
 				synchronized (m_stateLock) {
-					cachedState = m_state;
-
-					if (m_state == LinkState.STATE_TURNING_ON || m_state == LinkState.STATE_TURNING_OFF) {
-						// STATE_TURNING_ON:
+					
+					// Update pending state changes
+					
+					if (m_state == LinkState.STATE_TURNING_ON) {
 						//	stopListening() and startListening() called in quick succession
 						//	pretend that connection was lost between calls to match expected behavior
-						// STATE_TURNING_OFF:
-						//	stopListening() called
-						//	connection will be killed, kill pending tasks
-
+						
 						if (task instanceof OBD2DataQuery)
 							m_resultCallbackExecutor.execute(new DataQueryErrorResponse((OBD2DataQuery) task, OBD2DataQuery.ErrorType.ERROR_NO_CONNECTION));
-						while (!m_serviceTasks.isEmpty()) {
-							final LinkThreadTask queuedTask = m_serviceTasks.poll();
-							if (queuedTask instanceof OBD2DataQuery)
-								m_resultCallbackExecutor.execute(new DataQueryErrorResponse((OBD2DataQuery) queuedTask, OBD2DataQuery.ErrorType.ERROR_NO_CONNECTION));
-						}
-					}
-				}
-
-				// Handle task. Tasks might take a long time to finish, don't lock the monitor
-				// to prevent functions from blocking
-
-				switch (cachedState) {
-					case STATE_TURNING_ON: {
-						// nothing to do, all is fine and dandy
+						clearPendingQueries(ErrorType.ERROR_NO_CONNECTION);
+						
 						changeState(LinkState.STATE_ON, "user action");
-						break;
-					}
-					case STATE_TURNING_OFF: {
+						continue mainServiceLoop;
+					} else if (m_state == LinkState.STATE_TURNING_ON) {
+						//	stopListening() called
+						//	connection will be killed, kill pending tasks
+						
+						if (task instanceof OBD2DataQuery)
+							m_resultCallbackExecutor.execute(new DataQueryErrorResponse((OBD2DataQuery) task, OBD2DataQuery.ErrorType.ERROR_NO_CONNECTION));
+						clearPendingQueries(ErrorType.ERROR_NO_CONNECTION);
+
 						// Shut down the connection
 						killOBD2Link();
 						communicating = false;
-
+	
 						changeState(LinkState.STATE_OFF, "user action");
-						break;
-					}
-					case STATE_ON: {
-						// Data query
-						if (task instanceof OBD2DataQuery) {
-							try {
-								processQuery((OBD2DataQuery) task);
-							} catch (TransportFailedException ex) {
-								if (m_socket.isConnected())
-								{
-									// Adapter is just weird, quick reset
-									Log.i(LOG_TAG, "Transport failed, trying to recover");
-
-									try {
-										killOBD2Link();
-										communicating = false;
-										
-										// no throw == success
-										openOBD2Link();
-										communicating = true;
-										
-										Log.i(LOG_TAG, "Recovery succeeded");
-										
-										// "change" state to inform listeners about possible vehicle power state
-										// change
-										changeState(LinkState.STATE_ON, "automatic quick reconnect");
-									} catch (RuntimeException innerEx) {
-										Log.i(LOG_TAG, "Recovery failed, ex = " + ex.getMessage());
-										
-										killOBD2Link();
-										communicating = false;
-
-										changeState(LinkState.STATE_OFF, "transport failure");
-									}
-								} else {
-									// Connection died
-									Log.i(LOG_TAG, "Transport failed, bt connection killed");
-
-									killOBD2Link();
-									communicating = false;
-									
-									changeState(LinkState.STATE_OFF, "transport failure");
-								}
-							} catch (VehicleShutdownException e) {
-								// Vehicle was shut down
-								m_vehiclePowerState = false;
-								
-								// Send power state event
-								changeState(LinkState.STATE_ON, "Possible vehicle shutdown");
-								
-								// TODO: Wakeup beacons
-							}
-						}
-						break;
-					}
-
-					default: {
-						// never happens
-						Log.wtf(LOG_TAG, "m_state is not valid for this state");
-						break;
+						continue mainServiceLoop;
 					}
 				}
+				
+				// Handle task. Tasks might take a long time to finish, don't lock the monitor
+				// to prevent functions from blocking
+				
+				try {
+					if (task instanceof OBD2DataQuery) {
+						if (m_vehiclePowerState) {
+							processQuery((OBD2DataQuery) task);
+						
+							// successful query, power must be on
+							m_lastPowerStatePoll = System.nanoTime();
+						} else {
+							// don't even try to query if there is not power
+							m_resultCallbackExecutor.execute(new DataQueryErrorResponse((OBD2DataQuery) task, ErrorType.ERROR_QUERY_ERROR));
+						}
+						
+					} else if (task instanceof OBD2PowerStateQuery) {
+						// try ping power state
+						m_lastPowerStatePoll = System.nanoTime();
+						pingPowerState();
+					} else if (task instanceof OBD2ConnectionConfigurationAttemptTask) {
+						// try configure connection (
+						m_lastConfigureAttempt = System.nanoTime();
+						// connection query is indirect power state query
+						m_lastPowerStatePoll = System.nanoTime();
+						tryProtocolConfigure();
+					} else if (task instanceof DummyThreadTask) {
+						// nada
+					}
+				} catch (TransportFailedException ex) {
+					if (m_socket.isConnected())
+					{
+						// Adapter is just weird, quick reset
+						Log.i(LOG_TAG, "Transport failed, trying to recover");
+
+						try {
+							killOBD2Link();
+							communicating = false;
+							
+							// no throw == success
+							openOBD2Link();
+							communicating = true;
+							
+							Log.i(LOG_TAG, "Recovery succeeded");
+							
+							// Power state is up-to-date
+							m_lastPowerStatePoll = System.nanoTime();
+							
+							// openOBD2Link attempted configuration
+							m_lastConfigureAttempt = System.nanoTime();
+							
+							// Send power state event
+							changeState(null, "automatic quick reconnect");
+						} catch (RuntimeException innerEx) {
+							Log.i(LOG_TAG, "Recovery failed, ex = " + ex.getMessage());
+							
+							killOBD2Link();
+							communicating = false;
+							
+							// Update state
+							changeState(LinkState.STATE_OFF, "transport failure");
+						}
+					} else {
+						// Connection died
+						Log.i(LOG_TAG, "Transport failed, bt connection killed");
+
+						killOBD2Link();
+						communicating = false;
+						
+						// Update state
+						changeState(LinkState.STATE_OFF, "transport failure");
+					}
+				} catch (VehicleShutdownException e) {
+					// Power state is up-to-date
+					m_lastPowerStatePoll = System.nanoTime();
+					
+					// Update state
+					synchronized (m_stateLock) {
+						m_vehiclePowerState = false;
+						changeState(null, "Possible vehicle shutdown (indirect)");
+					}
+				}
+				
+				// Lost connection during task, kill pending queries
+				if (!communicating)
+					clearPendingQueries(ErrorType.ERROR_NO_CONNECTION);
 			}
 		}
 
 		// Shutdown
 
-		// avoid "weird" state updates like STATE_OFF, ENGINE_ON
-		m_vehiclePowerState = false;
-		
 		// Inform listeners, but don't duplicate messages
 		synchronized (m_stateLock) {
 			if (m_state != LinkState.STATE_OFF)
@@ -617,6 +657,79 @@ public final class OBDLinkManager {
 
 		// Kill connection if we had one
 		killOBD2Link();
+	}
+
+	private void pingPowerState() throws TransportFailedException {
+		final boolean vehiclePowerState;
+		
+		// Query is only relevant on active links
+		if (!m_OBDProtocolConfigured)
+			return;
+		
+		Log.i(LOG_TAG, "Timed power state ping");
+		
+		try {
+			vehiclePowerState = checkVehiclePowerState(m_socket);
+		} catch (CommandFailedException ex) {
+			Log.i(LOG_TAG, "Power state query failed");
+			throw new TransportFailedException();
+		}
+		
+		synchronized (m_stateLock)
+		{
+			if (m_vehiclePowerState == vehiclePowerState)
+				return;
+
+			m_vehiclePowerState = vehiclePowerState;
+			Log.i(LOG_TAG, "Detected power change, new state " + m_vehiclePowerState);
+			
+			changeState(null, "Polled power state change");
+		}
+	}
+	
+	private void tryProtocolConfigure() throws TransportFailedException {
+		Log.i(LOG_TAG, "Delayed protocol configuration attempt");
+		
+		if (m_OBDProtocolConfigured)
+			return;
+		
+		if (!m_socket.isConnected())
+			throw new TransportFailedException();
+		
+		try {
+			if (detectOBDProtocol(m_socket)) {
+				// Successful query
+				Log.i(LOG_TAG, "Delayed configuration succeeded, new power state " + m_vehiclePowerState);
+				
+				// Send event
+				m_OBDProtocolConfigured = true;
+				changeState(null, "Delayed configuration");
+			} else if (!m_socket.isConnected())
+				throw new TransportFailedException();
+		} catch (VehiclePowerStateInterruptException e) {
+			Log.i(LOG_TAG, "Delayed configuration attempt failed due to power state change, ignoring");
+		}
+	}
+
+	private LinkThreadTask getNextServiceTask() throws InterruptedException {
+		// Enough time has passed since the previous power state poll?
+		if (System.nanoTime() > m_lastPowerStatePoll + BT_POWER_STATE_POLL_INTERVAL * 1000000)
+			return new OBD2PowerStateQuery();
+		
+		// Protocol is not configured or activated and enough time has passed since the previous configuration attempt?
+		if (!m_OBDProtocolConfigured && System.nanoTime() > m_lastConfigureAttempt + BT_CONFIGURE_ATTEMPT_INTERVAL * 1000000)
+			return new OBD2ConnectionConfigurationAttemptTask();
+		
+		// Get next proper task
+		return m_serviceTasks.poll(BT_POWER_STATE_POLL_INTERVAL, TimeUnit.MILLISECONDS);
+	}
+
+	private void clearPendingQueries (final OBD2DataQuery.ErrorType error) {
+		while (!m_serviceTasks.isEmpty()) {
+			final LinkThreadTask queuedTask = m_serviceTasks.poll();
+			if (queuedTask instanceof OBD2DataQuery)
+				m_resultCallbackExecutor.execute(new DataQueryErrorResponse((OBD2DataQuery) queuedTask, OBD2DataQuery.ErrorType.ERROR_NO_CONNECTION));
+		}
 	}
 
 	private void openOBD2Link() {
@@ -732,7 +845,6 @@ public final class OBDLinkManager {
 		
 		m_vehiclePowerState = false;
 		
-		// Shut down connection, existing jobs are now terminated
 		try {
 			if (m_socket != null)
 				m_socket.close();
@@ -927,7 +1039,12 @@ public final class OBDLinkManager {
 			return false;
 		}
 		
-		Log.i(LOG_TAG, "Adapter link protocol configured, configuring adapter-vehicle OBD protocol.");
+		Log.i(LOG_TAG, "Adapter link protocol configured");
+		return detectOBDProtocol(socket);
+	}
+	
+	private boolean detectOBDProtocol(final BluetoothSocket socket) throws VehiclePowerStateInterruptException {
+		Log.i(LOG_TAG, "Trying to detect adapter-vehicle OBD protocol.");
 		
 		// configure protocol by trying them all in order
 		// if all protocols fail, assume that the ECU is offline
@@ -942,7 +1059,9 @@ public final class OBDLinkManager {
 			return false;
 		}
 		
-		boolean protocolConfigured = false;
+		m_OBDProtocolConfigured = false;
+		boolean potentialProtocolSet = false;
+		
 		if (adapterClaimsVehicleOn)
 		{
 			final class ProtocolInfo {
@@ -1012,7 +1131,7 @@ public final class OBDLinkManager {
 				
 				// protocol works, the vehicle is on
 				Log.i(LOG_TAG, "Protocol found, using protocol " + protocol.m_description);
-				protocolConfigured = true;
+				potentialProtocolSet = true;
 				break;
 			}
 		}
@@ -1020,19 +1139,23 @@ public final class OBDLinkManager {
 		// Could not find working protocol, assume the vehicle is asleep
 		
 		Log.i(LOG_TAG, "Protocol configured, requesting implementation information.");
-		Log.i(LOG_TAG, "Vehicle power state = " + protocolConfigured);
+		Log.i(LOG_TAG, "OBD protocol selection state = " + potentialProtocolSet);
 		
 		m_vehiclePowerState = false;
 		
-		if (protocolConfigured) {
+		if (potentialProtocolSet) {
 			// Try to activate OBD
 			try {
 				activateOBD(socket);
-
+				
+				// Protocol is functional
+				m_OBDProtocolConfigured = true;
+				
 				// Note: m_vehiclePowerState is by default false. If activateOBD throws, it will stay false
 				m_vehiclePowerState = true;
 			} catch (CommandFailedException ex) {
 				Log.e(LOG_TAG, "Target vehicle OBD activation error, error = " + ex.getMessage());
+				Log.i(LOG_TAG, "Marking connection as 'not configured'.");
 				return false;
 			}
 		}
@@ -1345,7 +1468,6 @@ public final class OBDLinkManager {
 	 * Is the vehicle online. NOTE! Requires configured protocol
 	 */
 	private boolean checkVehiclePowerState(final BluetoothSocket socket) throws CommandFailedException {
-		
 		// When adapter says NO, it means NO
 		if (queryVehiclePowerState(socket) == false)
 			return false;
