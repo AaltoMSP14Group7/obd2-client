@@ -826,7 +826,7 @@ public final class OBDLinkManager {
 					tryWriteToSocket(socket, "ATWS\r", resetTimeout);
 					clearBufferedMessages(socket, true);
 				} else {
-					final int resetTimeout = 2000; // ms
+					final int resetTimeout = 5000; // ms
 					recoverRetryDelay = 3000; // ms
 
 					Log.i(LOG_TAG, "Protocol configuration failed, sending hard reset");
