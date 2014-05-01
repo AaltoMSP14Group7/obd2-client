@@ -1067,29 +1067,31 @@ public final class OBDLinkManager {
 			final class ProtocolInfo {
 				final public boolean m_extendedDelay;
 				final public String m_code;
+				final public boolean m_requiresSlowInit;
 				final public String m_description;
 				
-				ProtocolInfo(final boolean extendedDelay, final String code, final String description) {
+				ProtocolInfo(final boolean extendedDelay, final String code, final boolean requiresSlowInit, final String description) {
 					m_extendedDelay = extendedDelay;
 					m_code = code;
+					m_requiresSlowInit = requiresSlowInit;
 					m_description = description;
 				}
 			};
 			
 			final ProtocolInfo testProtocols[] =
 			{
-				new ProtocolInfo(true,  null, "Default"),
-				new ProtocolInfo(true,  "0",  "Automatic"),
-				new ProtocolInfo(false, "1",  "SAE J1850 PWM"),
-				new ProtocolInfo(false, "2",  "SAE J1850 VPW"),
-				new ProtocolInfo(false, "3",  "ISO 9141-2"),
-				new ProtocolInfo(false, "4",  "ISO 14230-4 KWP"),
-				new ProtocolInfo(false, "5",  "ISO 14230-4 KWP (fast init)"),
-				new ProtocolInfo(false, "6",  "ISO 15765-4 CAN (11bit, 500kbaud)"),
-				new ProtocolInfo(false, "7",  "ISO 15765-4 CAN (29bit, 500kbaud)"),
-				new ProtocolInfo(false, "8",  "ISO 15765-4 CAN (11bit, 250kbaud)"),
-				new ProtocolInfo(false, "9",  "ISO 15765-4 CAN (29bit, 250kbaud)"),
-				new ProtocolInfo(false, "A",  "SAE J939 CAN"),
+				new ProtocolInfo(true,  null, false, "Default"),
+				new ProtocolInfo(true,  "0",  false, "Automatic"),
+				new ProtocolInfo(false, "1",  false, "SAE J1850 PWM"),
+				new ProtocolInfo(false, "2",  false, "SAE J1850 VPW"),
+				new ProtocolInfo(false, "5",  false, "ISO 14230-4 KWP (fast init)"),
+				new ProtocolInfo(false, "6",  false, "ISO 15765-4 CAN (11bit, 500kbaud)"),
+				new ProtocolInfo(false, "7",  false, "ISO 15765-4 CAN (29bit, 500kbaud)"),
+				new ProtocolInfo(false, "8",  false, "ISO 15765-4 CAN (11bit, 250kbaud)"),
+				new ProtocolInfo(false, "9",  false, "ISO 15765-4 CAN (29bit, 250kbaud)"),
+				new ProtocolInfo(false, "A",  false, "SAE J939 CAN"),
+				new ProtocolInfo(false, "3",  true,  "ISO 9141-2"),
+				new ProtocolInfo(false, "4",  true,  "ISO 14230-4 KWP"),
 			};
 			
 			for (final ProtocolInfo protocol : testProtocols)
@@ -1106,6 +1108,14 @@ public final class OBDLinkManager {
 					
 					// Just for logs
 					writeHandshakeAndExpectResponse(socket, "ATDP\r", null, ResponseVerification.AllowAnything);
+					
+					// Slow initialization
+					if (protocol.m_requiresSlowInit) {
+						Log.i(LOG_TAG, "Protocol slow initialization");
+						
+						// response is not interesting
+						queryAdapterString(socket, "ATSI\r", BT_DATA_QUERY_LONG_TIMEOUT);
+					}
 				} catch (CommandFailedException ex) {
 					Log.i(LOG_TAG, "Adapter protocol set failed,");
 					return false;
