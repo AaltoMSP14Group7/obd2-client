@@ -580,7 +580,7 @@ public final class OBDLinkManager {
 						// nada
 					}
 				} catch (TransportFailedException ex) {
-					if (m_socket.isConnected())
+					if (m_socket.isConnected() && m_vehiclePowerState)
 					{
 						// Adapter is just weird, quick reset
 						Log.i(LOG_TAG, "Transport failed, trying to recover");
@@ -612,7 +612,7 @@ public final class OBDLinkManager {
 							// Update state
 							changeState(LinkState.STATE_OFF, "transport failure");
 						}
-					} else {
+					} else if (!m_socket.isConnected()) {
 						// Connection died
 						Log.i(LOG_TAG, "Transport failed, bt connection killed");
 
@@ -667,6 +667,22 @@ public final class OBDLinkManager {
 			return;
 		
 		Log.i(LOG_TAG, "Timed power state ping");
+		
+		// If we have lost power, make sure the adapter doesn't think the
+		// protocol connection is still valid. Note: PC might take a long
+		// time (because closing a closed protocol is bound by timeouts).
+		if (!m_vehiclePowerState)
+		{
+			try {
+				queryAdapterString(m_socket, "ATPC\r", BT_DATA_QUERY_LONG_TIMEOUT);
+			} catch (CommandFailedException e) {
+				throw new TransportFailedException();
+			} catch (VehiclePowerStateInterruptException e) {
+				Log.i(LOG_TAG, "Explicit protocol close failed (vehicle power).");
+				
+				// power state changed, just continue to actual query
+			}
+		}
 		
 		try {
 			vehiclePowerState = checkVehiclePowerState(m_socket);
@@ -1040,7 +1056,8 @@ public final class OBDLinkManager {
 		}
 		
 		Log.i(LOG_TAG, "Adapter link protocol configured");
-		return detectOBDProtocol(socket);
+		detectOBDProtocol(socket);
+		return true; // connection is on even if configuration fails
 	}
 	
 	private boolean detectOBDProtocol(final BluetoothSocket socket) throws VehiclePowerStateInterruptException {
@@ -1066,9 +1083,9 @@ public final class OBDLinkManager {
 		{
 			final class ProtocolInfo {
 				final public boolean m_extendedDelay;
-				final public String m_code;
+				final public String  m_code;
 				final public boolean m_requiresSlowInit;
-				final public String m_description;
+				final public String  m_description;
 				
 				ProtocolInfo(final boolean extendedDelay, final String code, final boolean requiresSlowInit, final String description) {
 					m_extendedDelay = extendedDelay;
