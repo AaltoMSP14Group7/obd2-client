@@ -24,8 +24,11 @@ public class OBDCapabilityBitSet {
 			if (bits[i].length != 4)
 				throw new InvalidBitSetException("Expected 4 bytes, got " + Integer.toString(bits[i].length));
 
-		final ArrayList<Boolean> newBits = new ArrayList<Boolean>(bits.length * 4 * 8);
+		final ArrayList<Boolean> newBits = new ArrayList<Boolean>(bits.length * 4 * 8 + 1);
 
+		// pid 0 is always supported
+		newBits.add(true);
+		
 		// per field, per field element byte, per bit (in MBS -> LSB order)
 		for (int i = 0; i < bits.length; ++i)
 			for (int e = 0; e < 4; ++e)
