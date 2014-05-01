@@ -1065,12 +1065,12 @@ public final class OBDLinkManager {
 		if (adapterClaimsVehicleOn)
 		{
 			final class ProtocolInfo {
-				final public boolean m_auto;
+				final public boolean m_extendedDelay;
 				final public String m_code;
 				final public String m_description;
 				
-				ProtocolInfo(final boolean automatic, final String code, final String description) {
-					m_auto = automatic;
+				ProtocolInfo(final boolean extendedDelay, final String code, final String description) {
+					m_extendedDelay = extendedDelay;
 					m_code = code;
 					m_description = description;
 				}
@@ -1078,17 +1078,18 @@ public final class OBDLinkManager {
 			
 			final ProtocolInfo testProtocols[] =
 			{
-				new ProtocolInfo(true,  "0", "Automatic"),
-				new ProtocolInfo(false, "1", "SAE J1850 PWM"),
-				new ProtocolInfo(false, "2", "SAE J1850 VPW"),
-				new ProtocolInfo(false, "3", "ISO 9141-2"),
-				new ProtocolInfo(false, "4", "ISO 14230-4 KWP"),
-				new ProtocolInfo(false, "5", "ISO 14230-4 KWP (fast init)"),
-				new ProtocolInfo(false, "6", "ISO 15765-4 CAN (11bit, 500kbaud)"),
-				new ProtocolInfo(false, "7", "ISO 15765-4 CAN (29bit, 500kbaud)"),
-				new ProtocolInfo(false, "8", "ISO 15765-4 CAN (11bit, 250kbaud)"),
-				new ProtocolInfo(false, "9", "ISO 15765-4 CAN (29bit, 250kbaud)"),
-				new ProtocolInfo(false, "A", "SAE J939 CAN"),
+				new ProtocolInfo(true,  null, "Default"),
+				new ProtocolInfo(true,  "0",  "Automatic"),
+				new ProtocolInfo(false, "1",  "SAE J1850 PWM"),
+				new ProtocolInfo(false, "2",  "SAE J1850 VPW"),
+				new ProtocolInfo(false, "3",  "ISO 9141-2"),
+				new ProtocolInfo(false, "4",  "ISO 14230-4 KWP"),
+				new ProtocolInfo(false, "5",  "ISO 14230-4 KWP (fast init)"),
+				new ProtocolInfo(false, "6",  "ISO 15765-4 CAN (11bit, 500kbaud)"),
+				new ProtocolInfo(false, "7",  "ISO 15765-4 CAN (29bit, 500kbaud)"),
+				new ProtocolInfo(false, "8",  "ISO 15765-4 CAN (11bit, 250kbaud)"),
+				new ProtocolInfo(false, "9",  "ISO 15765-4 CAN (29bit, 250kbaud)"),
+				new ProtocolInfo(false, "A",  "SAE J939 CAN"),
 			};
 			
 			for (final ProtocolInfo protocol : testProtocols)
@@ -1096,9 +1097,12 @@ public final class OBDLinkManager {
 				Log.i(LOG_TAG, "Trying protocol " + protocol.m_description);
 				
 				try {
-					// Set protocol
-					writeHandshakeAndExpectResponse(socket, "ATPC\r", null, ResponseVerification.AllowAnything);
-					writeHandshakeAndExpectResponse(socket, "ATSP" + protocol.m_code + "\r", "OK", ResponseVerification.AllowSubstring);
+					// Set protocol code if any
+					if (protocol.m_code != null)
+					{
+						writeHandshakeAndExpectResponse(socket, "ATPC\r", null, ResponseVerification.AllowAnything);
+						writeHandshakeAndExpectResponse(socket, "ATSP" + protocol.m_code + "\r", "OK", ResponseVerification.AllowSubstring);
+					}
 					
 					// Just for logs
 					writeHandshakeAndExpectResponse(socket, "ATDP\r", null, ResponseVerification.AllowAnything);
@@ -1113,7 +1117,7 @@ public final class OBDLinkManager {
 					// Answer is not interesting, only if the queries succeeded or not.
 					// First query might take longer in automatic as the adapter iterates
 					// all protocols
-					final long firstTimeout = (protocol.m_auto) ? (3*BT_DATA_QUERY_LONG_TIMEOUT) : (BT_DATA_QUERY_LONG_TIMEOUT);
+					final long firstTimeout = (protocol.m_extendedDelay) ? (3*BT_DATA_QUERY_LONG_TIMEOUT) : (BT_DATA_QUERY_LONG_TIMEOUT);
 					queryAdapterString(socket, "0100\r", firstTimeout);
 					
 					// Just "warm up" 09-range. It doesn't matter if we fail or succeed
