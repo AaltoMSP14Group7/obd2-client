@@ -46,6 +46,7 @@ public final class OBDLinkManager {
 	private final Object				m_stateLock						= new Object();
 	private final LinkedBlockingQueue<LinkThreadTask> m_serviceTasks	= new LinkedBlockingQueue<LinkThreadTask>();
 	private final LinkedList<StateEventListener> m_listeners			= new LinkedList<StateEventListener>();
+	private final LinkedList<ConfigurationEventListener> m_configureListeners = new LinkedList<ConfigurationEventListener>();
 	private final OBDCapabilityBitSet	m_obd01CapabilityBitSet			= new OBDCapabilityBitSet();
 	private final OBDCapabilityBitSet	m_obd09CapabilityBitSet			= new OBDCapabilityBitSet();
 
@@ -217,6 +218,10 @@ public final class OBDLinkManager {
 	public static interface StateEventListener {
 		abstract void onStateChange(final LinkState linkState, final boolean powerState, final String reason);
 	}
+	
+	public static interface ConfigurationEventListener {
+		abstract void onConfigurationChanged(final String targetVIN);
+	}
 
 	private class BTStateChangeReceiver extends BroadcastReceiver {
 		BTStateChangeReceiver() {
@@ -375,6 +380,20 @@ public final class OBDLinkManager {
 	}
 
 	/**
+	 * Inserts new configuration state listener
+	 */
+	public void addEventListener(final ConfigurationEventListener listener) {
+		m_configureListeners.add(listener);
+	}
+
+	/**
+	 * Removes existing state listener or fails silently
+	 */
+	public void removeEventListener(final ConfigurationEventListener listener) {
+		m_configureListeners.remove(listener);
+	}
+	
+	/**
 	 * Submits a new data query. A single response call
 	 * to either onError() or onResult() is guaranteed.
 	 * <p/>
@@ -450,6 +469,37 @@ public final class OBDLinkManager {
 		}
 	}
 
+	private void sendConfigurationChangeEvent()
+	{
+		class CallbackStateTask implements Runnable {
+			private final ConfigurationEventListener m_listener;
+			private final String m_vin;
+
+			CallbackStateTask(ConfigurationEventListener listener, String vin) {
+				m_listener = listener;
+				m_vin = vin;
+			}
+
+			@Override
+			public void run() {
+				try {
+					m_listener.onConfigurationChanged(m_vin);
+				} catch (RuntimeException ex) {
+					// log and rethrow
+					Log.e(LOG_TAG, "Configuration change listener unhandled exception", ex);
+					throw ex;
+				}
+			}
+		}
+		
+		// Callbacks might modify container, lets be extra careful
+		@SuppressWarnings("unchecked")
+		final LinkedList<ConfigurationEventListener> listeners = (LinkedList<ConfigurationEventListener>) m_configureListeners.clone();
+		
+		for (ConfigurationEventListener listener : listeners)
+			m_generalCallbackExecutor.execute(new CallbackStateTask(listener, m_vehicleID));
+	}
+	
 	private void serviceLoop() {
 		boolean communicating = false;
 
@@ -491,6 +541,10 @@ public final class OBDLinkManager {
 
 						// inform listeners
 						changeState(LinkState.STATE_ON, "user action");
+						
+						// send configuration event only if configuration succeeded
+						if (m_OBDProtocolConfigured)
+							sendConfigurationChangeEvent();
 					} catch (RuntimeException ex) {
 						Log.i(LOG_TAG, "Failed to establish bt connection, reason = " + ex.getMessage());
 
@@ -718,9 +772,13 @@ public final class OBDLinkManager {
 				// Successful query
 				Log.i(LOG_TAG, "Delayed configuration succeeded, new power state " + m_vehiclePowerState);
 				
-				// Send event
+				// Send power event
 				m_OBDProtocolConfigured = true;
 				changeState(null, "Delayed configuration");
+				
+				// send configuration event
+				sendConfigurationChangeEvent();
+				
 			} else if (!m_socket.isConnected())
 				throw new TransportFailedException();
 		} catch (VehiclePowerStateInterruptException e) {
