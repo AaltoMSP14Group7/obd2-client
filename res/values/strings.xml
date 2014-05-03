@@ -5,5 +5,15 @@
     <string name="hello_world">Hello world!</string>
     <string name="action_settings">Settings</string>
     <string name="title_activity_demo">DemoActivity</string>
-
+    
+    <string name="butt_connect">Start</string>
+    <string name="butt_disconnect">Stop</string>
+    <string name="butt_cancel">Cancel</string>
+    <string name="click_to_connect">Click to connect.</string>
+    
+    <!-- These are used to tell the user that what is happenning in connection attempt -->
+    <string name="state_connection_failed">Connection failed!</string>
+    <string name="state_connection_established">Connection established</string>
+    <string name="state_disconnecting">Disconnecting, please wait</string>
+    <string name="state_cancelling">Cancelling, please wait</string>
 </resources>

@@ -1,16 +1,22 @@
 package fi.aalto.cse.msp14.carplatforms.serverconnection;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.http.HttpResponse;
 import org.apache.http.HttpStatus;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
 
+import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
+import android.R;
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -18,6 +24,7 @@ import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.Process;
 
@@ -28,7 +35,9 @@ import android.os.Process;
 public class CloudService extends Service implements ServerConnectionInterface {
 
 	private static final String LOCK_TAG = "obd2datatocloud";
-	private static final String URI = "http://82.130.19.148:8090/test.php";
+//	private static final String URI = "http://82.130.19.148:8090/test.php";
+	private static final String URI = "http://10.0.10.11:8090/test.php";
+	private static final String URI_SERVER = "http://ec2-54-186-67-231.us-west-2.compute.amazonaws.com:9000/addDataPoint";
 	
 	private PowerManager.WakeLock wakelock;
 	
@@ -57,11 +66,13 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	 * @throws NotCreatedYetException
 	 */
 	public static CloudService getInstance() throws NotCreatedYetException {
+		if (instance == null) throw new NotCreatedYetException();
 		return instance;
 	}
 	
 	/**
-	 * 
+	 * Requests wake lock which keeps CPU running even if the device is otherwise sleeping: 
+	 * that way data is fetched from OBD and sent to cloud even if the screen is shut.
 	 */
 	private void requestWakeLock() {
 		PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -71,14 +82,24 @@ public class CloudService extends Service implements ServerConnectionInterface {
 
 	@Override
 	public void onCreate() {
+		System.out.println("SERVICE ON CREATE " + started);
 		instance = this;
 		System.out.println("Joojoo");
 		messages = new LinkedBlockingQueue<SaveDataMessage>();
-	}
 
-	  
-	@Override
-	public int onStartCommand(Intent intent, int flags, int startId) {
+		// Testing notifications
+		NotificationManager mNotifyManager =
+		        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+		Notification.Builder nBuild = 
+		new Notification.Builder(this)
+	    .setContentTitle("OBD2 client")
+	    .setContentText("Service is running")
+	    .setSmallIcon(R.drawable.ic_notification_overlay) // TODO maybe should change this icon
+	    .setOngoing(true);
+	    Notification noti = nBuild.build();
+	    int id = 1;
+	    String tag = "obd2ServerNotifyer";
+	    mNotifyManager.notify(tag, id, noti);
 		if (!started) {
 			// Only fetch the lock if one does not exist yet!
 			started = true;
@@ -88,6 +109,22 @@ public class CloudService extends Service implements ServerConnectionInterface {
 			t.setPriority(Process.THREAD_PRIORITY_BACKGROUND);
 			t.start();
 		}
+	}
+
+	  
+	@Override
+	public int onStartCommand(Intent intent, int flags, int startId) {
+		System.out.println("SERVICE ON START "  + started);
+/*		if (!started) {
+			// Only fetch the lock if one does not exist yet!
+			started = true;
+			requestWakeLock();
+			cloud = new CloudConnection();
+			Thread t = new Thread(cloud);
+			t.setPriority(Process.THREAD_PRIORITY_BACKGROUND);
+			t.start();
+		}
+		*/
 		return START_STICKY;
 	}
 
@@ -98,8 +135,14 @@ public class CloudService extends Service implements ServerConnectionInterface {
 
 	@Override
 	public void onDestroy() {
-		System.out.println("On destroy");
+		System.out.println("ON DESTROY");
+		NotificationManager mNotifyManager =
+		        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+		int id = 1;
+	    String tag = "obd2ServerNotifyer";
+	    mNotifyManager.cancel(tag, id);
 		stop();
+		
 	}
 
 	/**
@@ -236,6 +279,36 @@ public class CloudService extends Service implements ServerConnectionInterface {
 				return true;
 			}
 			return false;
+		}
+	}
+
+	/**
+	 * Note! This method MUST be called from a separate thread!
+	 * Otherwise it might block if network is slow or not available.
+	 * @throws IllegalThreadUseException If this method is called for any reason from main thread.
+	 */
+	public void getXML() throws IllegalThreadUseException {
+		if (Looper.myLooper() == Looper.getMainLooper()) {
+			throw new IllegalThreadUseException("This method must NOT be called from UI thread!");
+		}
+		// Connect server and fetch XML specs
+		HttpClient httpclient = new DefaultHttpClient();  
+		HttpGet request = new HttpGet(URI + "");  
+		try {
+			HttpResponse response = httpclient.execute(request);
+			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
+				// Yay! Now we got the wanted XML specs!
+				// So. What exactly TODO now?
+				
+			} else {
+				// Something happened. What TODO now? 
+			}
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		} catch (ClientProtocolException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 	}
 }

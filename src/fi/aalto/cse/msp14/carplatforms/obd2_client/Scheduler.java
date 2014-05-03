@@ -88,6 +88,7 @@ public class Scheduler {
 	 */
 	public void start() {
 		if (!running) {
+			running = true;
 			timer = new Timer();
 			synchronized(filters) {
 				ValueProviderTask task;
@@ -96,7 +97,6 @@ public class Scheduler {
 					timer.schedule(task, task.valueProvider.getQueryTickInterval(), task.valueProvider.getQueryTickInterval());
 				}
 			}
-			running = true;
 		}
 	}
 	

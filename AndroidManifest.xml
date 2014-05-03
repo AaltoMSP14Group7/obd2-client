@@ -15,6 +15,7 @@
     </uses-permission>
 	<uses-permission android:name="android.permission.WAKE_LOCK">
     </uses-permission>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     
     <uses-sdk
         android:minSdkVersion="14"
@@ -30,7 +31,14 @@
             android:label="@string/app_name" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name="fi.aalto.cse.msp14.carplatforms.obd2_client.BootActivity"
+            android:label="Boot test" >
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
@@ -44,6 +52,7 @@
         </activity>
         <service 
             android:name="fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService"
+            android:process=":fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService"
             android:exported="false">
         </service>
     </application>

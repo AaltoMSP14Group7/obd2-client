@@ -60,7 +60,17 @@ public class DemoActivity extends Activity {
                 OBDLinkManager.getInstance(getApplicationContext()).stopListening();
             }
         });
-
+        
+        
+        
+        
+        
+        
+		/**
+		 * 
+		 * @author 
+		 *
+		 */
         class RPMQuery extends OBDLinkManager.OBD2DataQuery {
 
             RPMQuery() {
