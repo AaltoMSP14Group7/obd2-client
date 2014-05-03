@@ -15,7 +15,7 @@ import android.widget.TextView;
  * @author Maria
  *
  */
-public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO into something more informative */> {
+public class BootStrapperTaskOld extends AsyncTask<Void, String, Boolean /* TODO into something more informative */> {
 	
 	private AsyncTask currentTask;
 	private CloudService parent; // Not just activity, because some things have to be passed to this one.
@@ -24,7 +24,7 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
 	 * 
 	 * @param activity
 	 */
-	public BootStrapperTask(CloudService activity) {
+	public BootStrapperTaskOld(CloudService activity) {
 		assert(activity != null);
 		parent = activity;
 	}
@@ -56,12 +56,12 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
 
 		publishProgress("Connection done!");
 		
-		if (!this.isCancelled()) {
+/*		if (!this.isCancelled()) {
 			Session s = Session.getSession();
 			s.setActive(true);
 			s.setScheduler(scheduler);
 			s.setState(ProgramState.STARTED);
-		}
+		}*/
 		return true;
 	}
 
@@ -70,7 +70,7 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
 	 * @param scheduler
 	 */
 	private void createCloudValueProviders(Scheduler scheduler) {
-        TempCloudValueProviderInterface cvp1 = new TempCloudValueProviderInterface() {
+/*        TempCloudValueProviderInterface cvp1 = new TempCloudValueProviderInterface() {
 			@Override
 			public void tick() {
 				// Do nothing
@@ -107,19 +107,19 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
             scheduler.registerFilter("Test1", cvp1);
             scheduler.registerFilter("Test2", cvp2);
         } catch (Exception e) {}
-        // TODO Remove those ^^^
+        // TODO Remove those ^^^*/
 	}
 
 	/**
 	 * TODO should return something and actually do something.
 	 */
 	private void fetchXMLSpecs() {
-		try {
+/*		try {
 			parent.getXML();
 		} catch (IllegalThreadUseException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
-		}
+		}*/
 	}
 
 	/**

@@ -6,7 +6,6 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -25,12 +24,16 @@ public class BootActivity extends Activity {
 	private static final String KEY_PB_V = "obd2KeyPBvisibility";
 	private static final String KEY_TW_V = "obd2KeyTWvisibility";
 	private static final String KEY_TW_TXT = "obd2KeyTWText";
+	private static final String KEY_STATE = "obd2KeyState";
+	private static final String KEY_SHOULD_BIND = "obd2KeyShouldBind";
 	
 	private boolean isBound = false;
+
 	private Intent cloud;
 	private final Messenger messenger = new Messenger(new IncomingHandler());
 	
 	private Messenger serviceMessenger;
+	private ProgramState progstate;
 
 	private ServiceConnection mConnection = new ServiceConnection() {
 		@Override
@@ -58,23 +61,30 @@ public class BootActivity extends Activity {
 		setContentView(R.layout.boot);
 
 		if (savedInstanceState == null) {
+			changeButtonAppearance(ProgramState.IDLE);
+			progstate = ProgramState.IDLE;
 			(findViewById(R.id.progressBar1)).setVisibility(ProgressBar.INVISIBLE);
 			(findViewById(R.id.textView3)).setVisibility(ProgressBar.INVISIBLE);
-			changeButtonAppearance(Session.getSession().getState());
-			
 		} else {
-			changeButtonAppearance(Session.getSession().getState());
+			progstate = ProgramState.valueOf(savedInstanceState.getString(KEY_STATE));
+			changeButtonAppearance(progstate);
 			((TextView)(findViewById(R.id.textView3))).setText(savedInstanceState.getString(KEY_TW_TXT));
-			(findViewById(R.id.progressBar1)).setVisibility(ProgressBar.INVISIBLE);
-			(findViewById(R.id.textView3)).setVisibility(ProgressBar.INVISIBLE);
+			(findViewById(R.id.progressBar1)).setVisibility(savedInstanceState.getInt(KEY_PB_V));
+			(findViewById(R.id.textView3)).setVisibility(savedInstanceState.getInt(KEY_TW_V));
+			if (savedInstanceState.getBoolean(KEY_SHOULD_BIND)) {
+				this.startOwnService();
+			}
 		}
 	}
 	
 	@Override
 	public void onSaveInstanceState(Bundle output) {
+		System.out.println("Save instance !!!!!!!!!!!!");
 		output.putInt(KEY_PB_V, (findViewById(R.id.progressBar1)).getVisibility());
 		output.putInt(KEY_TW_V, (findViewById(R.id.textView3)).getVisibility());
 		output.putString(KEY_TW_TXT, ((TextView)(findViewById(R.id.textView3))).getText().toString());
+		output.putString(KEY_STATE, this.progstate.name());
+		output.putBoolean(KEY_SHOULD_BIND, this.isBound);
 	}
 	
 	/**
@@ -86,6 +96,10 @@ public class BootActivity extends Activity {
 		System.out.println("SETTING STATE: " + state.name());
 		switch(state) {
 			case IDLE:
+				progstate = ProgramState.IDLE;
+				this.unbind();
+                cloud = null;
+
 				((Button)(findViewById(R.id.button1))).setEnabled(true);
 				((Button)(findViewById(R.id.button1))).setText(R.string.butt_connect);
 				(findViewById(R.id.progressBar1)).setVisibility(ProgressBar.GONE); // Do not show progress bar
@@ -93,15 +107,13 @@ public class BootActivity extends Activity {
 				(findViewById(R.id.button1)).setOnClickListener(new View.OnClickListener() {
 					@Override
 					public void onClick(View v) {
+						progstate = ProgramState.STARTING;
 						(findViewById(R.id.progressBar1)).setVisibility(ProgressBar.VISIBLE); // Show progress bar
 						(findViewById(R.id.textView3)).setVisibility(ProgressBar.VISIBLE); // Show status
 						changeButtonAppearance(ProgramState.STARTING);
 						((TextView)(findViewById(R.id.textView3))).setText("Trying to connect");
 
-						
-						//task = new BootStrapperTask(BootActivity.this);
-						//task.execute();
-						// TODO Send message to service
+						startOwnService();
 					}
 				});
 				break;
@@ -111,23 +123,19 @@ public class BootActivity extends Activity {
 				(findViewById(R.id.button1)).setOnClickListener(new View.OnClickListener() {
 					@Override
 					public void onClick(View v) {
+						progstate = ProgramState.CANCELLING;
 						TextView tw = (TextView) findViewById(R.id.textView3);
 						tw.setText(R.string.state_cancelling);
 						(findViewById(R.id.progressBar1)).setVisibility(ProgressBar.VISIBLE); // Show progress bar
 						(findViewById(R.id.textView3)).setVisibility(ProgressBar.VISIBLE); // Show status
 						changeButtonAppearance(ProgramState.CANCELLING);
 						
-						startOwnService();
-						//if (task != null) {
-						//	task.cancel(true);
-						//	task = null;
-						//}
-						// TODO cancel
+						cancelServiceStart();
 					}
-
 				});
 				break;
 			case STARTED:
+				progstate = ProgramState.STARTED;
 				((Button)(findViewById(R.id.button1))).setEnabled(true);
 				((Button)(findViewById(R.id.button1))).setText(R.string.butt_disconnect);
 				TextView tw = (TextView) findViewById(R.id.textView3);
@@ -137,13 +145,12 @@ public class BootActivity extends Activity {
 				(findViewById(R.id.button1)).setOnClickListener(new View.OnClickListener() {
 					@Override
 					public void onClick(View v) {
+						progstate = ProgramState.STOPPING;
 						TextView tw = (TextView) findViewById(R.id.textView3);
 						tw.setText(R.string.state_disconnecting);
 						changeButtonAppearance(ProgramState.STOPPING);
 
 						stopService();
-						//new StopAllTask().execute();
-						// TODO Stop
 					}
 				});
 				break;
@@ -179,26 +186,58 @@ public class BootActivity extends Activity {
 	 * Tries to start service.
 	 */
 	private void startOwnService() {
+		System.out.println("STARTING SERVICE 1 ");
 		if (cloud == null) {
+			System.out.println("STARTING SERVICE 2");
 			cloud = new Intent(this, CloudService.class);
 			startService(cloud);
 			bindService(new Intent(this, CloudService.class), mConnection, Context.BIND_AUTO_CREATE);
+			isBound = true;
 		}
 	}
 	
-    /**
+	/**
+	 * 
+	 */
+	private void cancelServiceStart() {
+        if (isBound) {
+            if (this.serviceMessenger != null) {
+                try {
+                    Message msg = Message.obtain(null, CloudService.MSG_CANCEL);
+                    msg.replyTo = messenger;
+                    serviceMessenger.send(msg);
+                } catch (RemoteException e) {}
+            }
+        }
+	}
+
+	/**
      * Tries to stop service.
      */
     private void stopService() {
         if (cloud != null) {
+        	this.unbindService(mConnection);
+        	System.out.println("Stopping service");
         	stopService(cloud);
         	cloud = null;
+        	isBound = false;
         }
     }
 	
 	@Override
 	protected void onDestroy() {
+		System.out.println("BOOT ACTIVITY ON DESTROY");
 		super.onDestroy();
+		unbind();
+	}
+
+	/**
+	 * 
+	 */
+	private void unbind() {
+        if (cloud != null) {
+        	this.unbindService(mConnection);
+        }
 	}
 
 	/**
@@ -211,12 +250,12 @@ public class BootActivity extends Activity {
         public void handleMessage(Message msg) {
             switch (msg.what) {
             case CloudService.MSG_PUB_STATUS:
-                String str1 = msg.getData().getString("state");
+                String str1 = msg.getData().getString("str1");
                 ProgramState stat = ProgramState.valueOf(str1);
                 changeButtonAppearance(stat);
                 break;
             case CloudService.MSG_PUB_STATUS_TXT:
-                String txt = msg.getData().getString("state");
+                String txt = msg.getData().getString("str1");
                 ((TextView)(findViewById(R.id.textView3))).setText(txt);
             default:
                 super.handleMessage(msg);

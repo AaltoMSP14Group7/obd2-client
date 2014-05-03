@@ -1,61 +1,51 @@
 package fi.aalto.cse.msp14.carplatforms.serverconnection;
 
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.LinkedBlockingQueue;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.HttpStatus;
-import org.apache.http.client.ClientProtocolException;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.DefaultHttpClient;
-
-import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
-import fi.aalto.cse.msp14.carplatforms.obd2_client.BootStrapperTask;
+import fi.aalto.cse.msp14.carplatforms.obd2_client.CloudValueProvider;
+import fi.aalto.cse.msp14.carplatforms.obd2_client.ProgramState;
+import fi.aalto.cse.msp14.carplatforms.obd2_client.R;
+import fi.aalto.cse.msp14.carplatforms.obd2_client.Scheduler;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
+import android.os.AsyncTask;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
-import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.PowerManager;
 import android.os.Process;
+import android.os.RemoteException;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 /**
  * 
  * @author Maria
  */
-public class CloudService extends Service implements ServerConnectionInterface {
+public class CloudService extends Service {
+	// These are identifiers for messages.
+	public static final int MSG_START = 0;
+	public static final int MSG_STOP = 1;
+	public static final int MSG_CANCEL = 2;
+	public static final int MSG_REGISTER_AS_STATUS_LISTENER = 3;
+	public static final int MSG_UNREGISTER_AS_STATUS_LISTENER = 4;
+	public static final int MSG_GET_XML = 5;
+	public static final int MSG_MSG = 6;
+	public static final int MSG_PUB_STATUS = 7;
+	public static final int MSG_PUB_STATUS_TXT = 8;
 
 	private static final String LOCK_TAG = "obd2datatocloud";
-//	private static final String URI = "http://82.130.19.148:8090/test.php";
-	private static final String URI = "http://10.0.10.11:8090/test.php";
-	private static final String URI_SERVER = "http://ec2-54-186-67-231.us-west-2.compute.amazonaws.com:9000/addDataPoint";
 	
 	private PowerManager.WakeLock wakelock;
 	private static long t = System.nanoTime();
 	
-	private boolean keepalive;
-	private boolean waitingForConnection;
-	
-	private LinkedBlockingQueue<SaveDataMessage> messages;
-	private ConnectionListener conStateBCListener;
 	private CloudConnection cloud;
-	private SaveDataMessage current;
+	private BootStrapperTask task;
 	
 	private static boolean started = false;
 	
@@ -63,24 +53,6 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	final Messenger messenger = new Messenger(new IncomingHandler());
 	ArrayList<Messenger> statusListeners = new ArrayList<Messenger>(); // All status listeners
 
-	// These are identifiers for messages.
-	public static final int MSG_START = 0;
-	public static final int MSG_STOP = 1;
-	public static final int MSG_REGISTER_AS_STATUS_LISTENER = 2;
-	public static final int MSG_UNREGISTER_AS_STATUS_LISTENER = 3;
-	public static final int MSG_GET_XML = 4;
-	public static final int MSG_MSG = 5;
-	public static final int MSG_PUB_STATUS = 6;
-	public static final int MSG_PUB_STATUS_TXT = 7;
-	
-	/**
-	 * 
-	 */
-	public CloudService() {
-		current = null;
-		keepalive = true;
-	}
-	
 	/**
 	 * 
 	 * @return
@@ -112,13 +84,36 @@ public class CloudService extends Service implements ServerConnectionInterface {
             	statusListeners.remove(msg.replyTo);
             	break;
             case MSG_STOP: // Not used
-            	CloudService.this.fullStop();
             	break;
             case MSG_START: // Not used
-            	CloudService.this.start();
+            	break;
+            case MSG_CANCEL: // Not used
+            	cancel();
             	break;
             default:
                 super.handleMessage(msg);
+            }
+        }
+    }
+	
+	/**
+	 * 
+	 * @param intvaluetosend
+	 */
+    private void broadcast(int type, String value1, String value2) {
+        for (int i = statusListeners.size() - 1; i >= 0; i--) {
+            try {
+                //Send data as a String
+                Bundle b = new Bundle();
+                b.putString("str1", value1);
+                if (value2 != null) {
+                    b.putString("str2", value1);
+                }
+                Message msg = Message.obtain(null, type);
+                msg.setData(b);
+                statusListeners.get(i).send(msg);
+            } catch (RemoteException e) {
+            	statusListeners.remove(i); // TODO Be careful for concurrent modification exception!
             }
         }
     }
@@ -137,8 +132,9 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	public void onCreate() {
 		System.out.println("SERVICE ON CREATE " + started);
 	    if (!started) {
+			task = null;
+			
 		    started = true;
-			messages = new LinkedBlockingQueue<SaveDataMessage>();
 	
 			// Create notification which tells that this service is running.
 			NotificationManager mNotifyManager =
@@ -156,19 +152,20 @@ public class CloudService extends Service implements ServerConnectionInterface {
 		    // Notification created!
 
 			requestWakeLock();
-			cloud = new CloudConnection();
+			cloud = new CloudConnection(this);
 			Thread t = new Thread(cloud);
 			t.setPriority(Process.THREAD_PRIORITY_BACKGROUND);
 			t.start();
-			
-			new BootStrapperTask(this).execute();
-		}
-	}
 
+			System.out.println("Start task");
+			task = new BootStrapperTask(this);
+			task.execute();
+	    }
+	}
 	  
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
-		 Log.i("LocalService", "Received start id " + startId + ": " + intent);
+		Log.i("LocalService", "Received start id " + startId + ": " + intent);
 		return START_STICKY;
 	}
 
@@ -179,6 +176,7 @@ public class CloudService extends Service implements ServerConnectionInterface {
 
 	@Override
 	public void onDestroy() {
+		super.onDestroy();
 		System.out.println("ON DESTROY");
 		NotificationManager mNotifyManager =
 		        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -186,29 +184,19 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	    String tag = "obd2ServerNotifyer";
 	    mNotifyManager.cancel(tag, id);
 		stop();
+		CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, getText(R.string.state_connection_closed).toString(), null);
+		CloudService.this.broadcast(CloudService.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
 	    started = false;
 	}
 
-	public void start() {
-		
-	}
-	
-	/**
-	 * 
-	 */
-	private void fullStop() {
-		this.stopSelf();
-	}
 	/**
 	 * 
 	 */
 	private void stop() {
 		System.out.println("STOP CALLED!");
-		keepalive = false;
-		synchronized(cloud) {
-			cloud.notify();
+		if (cloud != null) {
+			cloud.stop();
 		}
-		
 		if (wakelock != null) {
 			try {
 				wakelock.release();
@@ -218,163 +206,202 @@ public class CloudService extends Service implements ServerConnectionInterface {
 				// Do nothing
 			}
 		}
-		if (this.conStateBCListener != null) {
-			try {
-				this.unregisterReceiver(conStateBCListener);
-			} catch (Exception e) {
-				// It was not registered after all, so, ignore this.
-				System.out.println(e.toString());
-			}
-		}
-	}
-	
-	@Override
-	public void sendMessage(SaveDataMessage message) {
-		this.messages.offer(message);
-		synchronized(cloud) {
-			cloud.notify();
-		}
-	}
-
-	@Override
-	public void connectionAvailable() {
-		System.out.println("CONNECTION AVAILABLE");
-		if (this.waitingForConnection) {
-			System.out.println("Connection available");
-			this.waitingForConnection = false;
-			this.unregisterReceiver(conStateBCListener);
-			conStateBCListener = null;
-			synchronized(cloud) {
-				this.cloud.notify();
-			}
-		}
 	}
 	
 	/**
-	 * Dynamically register connectivity listener.
+	 * 
 	 */
-	private void waitForConnection() {
-		if (!waitingForConnection) {
-			System.out.println("Wait for connection");
-			this.waitingForConnection = true;
-			conStateBCListener = new ConnectionListener(this);
-			this.registerReceiver(conStateBCListener, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+	private void cancel() {
+		if (this.task != null) {
+			task.cancel(true);
 		}
 	}
 	
 	/**
-	 * This is just a Runnable that takes care of the actual sending.
+	 * So, this method takes care of creating stuff.
+	 * It is a long class, but inside this class because it makes things easier. Yes, I am lazy in that way.
+	 * 
 	 * @author Maria
 	 *
 	 */
-	private final class CloudConnection implements Runnable {
-		@Override
-		public void run() {
-			new Thread(new Runnable() {
+	private class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO into something more informative */> {
+		
+		private AsyncTask currentTask;
+		private CloudService parent; // Not just activity, because some things have to be passed to this one.
+		
+		/**
+		 * 
+		 * @param activity
+		 */
+		public BootStrapperTask(CloudService activity) {
+			assert(activity != null);
+			parent = activity;
+		}
 
-				@Override
-				public void run() {
-					for (int i = 0; i < 120; i++) {
-						try {
-							Thread.sleep(1000);
-							Log.i("TESTING_SERVICE", "SLEPT NOW " + i);
-						} catch (Exception e) {
-							
-						}
-					}
-				}
-				
-			}).start();
-			while (keepalive) {
-				if (current == null) {
-					current = CloudService.this.messages.poll();
-				}
-				if (current != null) { // If it is still null, then there is no use to send anything.
-					try {
-						System.out.println("Send ");
-						HttpClient httpclient = new DefaultHttpClient();  
-						HttpPost request = new HttpPost(URI);  
-						request.setEntity(new StringEntity(current.toString()));
-						HttpResponse response = httpclient.execute(request);
-						if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
-							current = null;
-						} else {
-							
-							// Something happened. What TODO now? 
-						}
-					} catch (ClientProtocolException e) {
-						// Protocol error. What can one do!
-					} catch (IOException e) {
-						// No connection!
-						ConnectivityManager connMgr = (ConnectivityManager) CloudService.this.getSystemService(Context.CONNECTIVITY_SERVICE);
-				        android.net.NetworkInfo wifi = connMgr
-				                .getNetworkInfo(ConnectivityManager.TYPE_WIFI);
-				        android.net.NetworkInfo mobile = connMgr
-				                .getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
-			        	System.out.println(!isAvailable(wifi) + " and " + !isAvailable(mobile));
-				        if (!isAvailable(wifi) && !isAvailable(mobile)) {
-				        	waitForConnection();
-				        	System.out.println("Registered!");
-				        }
-					} catch (Exception e) {
-						// Sending failed
-						// Other exception
-					}
-				}
-				while(keepalive && (CloudService.this.messages.isEmpty() || waitingForConnection)) {
-					System.out.println("Wait");
-					synchronized(cloud) {
-						try {
-							cloud.wait();
-							System.out.println("Continue");
-						} catch (InterruptedException e) {
-							e.printStackTrace();
-						}
-					}
-				}
-			}
-			System.out.println("THREAD STOPPED");
+		@Override
+		protected Boolean doInBackground(Void... params) {
+			// TODO bluetooth
+			publishProgress("Starting service");
+	        
+	        publishProgress("Connecting bluetooth");
+			connectBluetooth();
+			if (this.isCancelled()) return false;
+			
+			publishProgress("Creating content");
+			Scheduler scheduler = new Scheduler(); // TODO something with it.
+	        scheduler.start();
+
+	        String deviceID = createID();
+			if (this.isCancelled()) return false;
+	        
+	        // TODO Now, fetch from cloud that what to get
+			fetchXMLSpecs();
+			if (this.isCancelled()) return false;
+	        
+	        // TODO Create OBD sources
+			publishProgress("Starting process");
+			createCloudValueProviders(scheduler); // TODO Create CloudValueProviders.
+			if (this.isCancelled()) return false;
+
+			publishProgress("Connection done!");
+			return true;
 		}
 
 		/**
-		 * 
-		 * @param networkInfo
+		 * TODO real things
+		 * @param scheduler
+		 */
+		private void createCloudValueProviders(Scheduler scheduler) {
+	        CloudValueProvider cvp1 = new CloudValueProvider() {
+				@Override
+				public long getQueryTickInterval() {
+					return 10000;
+				}
+				@Override
+				public long getOutputTickInterval() {
+					return 10000;
+				}
+				@Override
+				public void tickQuery() {
+					System.out.println("TICK QUERY 1");
+				}
+				@Override
+				public void tickOutput() {
+					System.out.println("TICK OUT 1");
+				}
+	        };
+
+	        CloudValueProvider cvp2 = new CloudValueProvider() {
+				@Override
+				public long getQueryTickInterval() {
+					return 15000;
+				}
+				@Override
+				public long getOutputTickInterval() {
+					return 15000;
+				}
+				@Override
+				public void tickQuery() {
+					System.out.println("TICK QUERY 1");
+				}
+				@Override
+				public void tickOutput() {
+					System.out.println("TICK OUT 1");
+				}
+	        };
+
+	        if (this.isCancelled()) return;
+	        try {
+	            scheduler.registerFilter("Test1", cvp1);
+	            scheduler.registerFilter("Test2", cvp2);
+	        } catch (Exception e) {}
+	        // TODO Remove those ^^^
+		}
+
+		/**
+		 * TODO should return something and actually do something.
+		 */
+		private void fetchXMLSpecs() {
+			System.out.println("Get xml");
+		}
+
+		/**
+		 * TODO Bluetooth connection.
 		 * @return
 		 */
-		private boolean isAvailable(NetworkInfo info) {
-			if (info != null && info.isConnected()) {
-				return true;
-			}
-			return false;
+		private boolean connectBluetooth() {
+			try {
+				Thread.sleep(2000); // TODO bluetooth connection waiting.
+			} catch(Exception e) {}
+			return true;
 		}
-	}
 
-	/**
-	 * Note! This method MUST be called from a separate thread!
-	 * Otherwise it might block if network is slow or not available.
-	 * @throws IllegalThreadUseException If this method is called for any reason from main thread.
-	 */
-	public void getXML() throws IllegalThreadUseException {
-		if (Looper.myLooper() == Looper.getMainLooper()) {
-			throw new IllegalThreadUseException("This method must NOT be called from UI thread!");
+		@Override
+		public void onProgressUpdate(String... text) {
+			System.out.println("Progress update");
+			if (text.length < 1) return;
+			String newText = text[0];
+			CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, newText, null);
 		}
-		// Connect server and fetch XML specs
-		HttpClient httpclient = new DefaultHttpClient();  
-		HttpGet request = new HttpGet(URI + "");  
-		try {
-			HttpResponse response = httpclient.execute(request);
-			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
-				// Yay! Now we got the wanted XML specs!
-				// So. What exactly TODO now?
-			} else {
-				// Something happened. What TODO now? 
+
+		@Override
+		public void onPostExecute(Boolean v) {
+			if (v) { // Successful!
+				CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, parent.getText(R.string.state_connection_established).toString(), null);
+				CloudService.this.broadcast(CloudService.MSG_PUB_STATUS, ProgramState.STARTED.name(), null);
+			} else { // Not so successful
+				CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, parent.getText(R.string.state_connection_failed).toString(), null);
+				CloudService.this.broadcast(CloudService.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
 			}
-		} catch (UnsupportedEncodingException e) {
-			e.printStackTrace();
-		} catch (ClientProtocolException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
 		}
+		
+		/**
+		 * Creates some sort of hopefully unique ID for this device.
+		 * @return
+		 */
+		private String createID() {
+			TelephonyManager tm = (TelephonyManager) parent.getSystemService(Context.TELEPHONY_SERVICE);
+			String tohash = tm.getDeviceId(); // TODO real id fetching
+			return tohash;
+		}
+
+	    @Override
+	    protected void onCancelled(Boolean v) {
+	        System.out.println("CANCEL!");
+	        new CancelBootStrapper().execute();
+	    }
+	    
+	    /*
+	     * ------------------------------------------------------------------------
+	     * Another class
+	     * ------------------------------------------------------------------------
+	     */
+
+	    /**
+	     * This class only takes care of canceling everything what was done before.
+	     * This is needed if in the middle of initialization (before the task is finished)
+	     * the user decides to cancel whole the connection thing.
+	     * 
+	     * @author Maria
+	     *
+	     */
+	    class CancelBootStrapper extends AsyncTask<Void, Void, Void> {
+			@Override
+			protected Void doInBackground(Void... params) {
+		        if (currentTask != null) {
+		        	currentTask.cancel(true);
+		        }
+				System.out.println("CANCELLING...");
+				return null;
+			}
+			@Override
+			protected void onPostExecute(Void v) {
+				System.out.println("DONE?");
+				CloudService.this.broadcast(MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
+				CloudService.this.broadcast(MSG_PUB_STATUS_TXT, CloudService.this.getText(R.string.state_connection_cancelled).toString(), null);
+				CloudService.this.stopSelf();
+				System.out.println("DONE!");
+			}
+	    }
 	}
 }

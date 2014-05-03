@@ -1,15 +1,16 @@
 package fi.aalto.cse.msp14.carplatforms.obdfilter;
 
 import java.util.ArrayList;
+
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
-import fi.aalto.cse.msp14.carplatforms.obd2_client.TempCloudValueProviderInterface;
+import fi.aalto.cse.msp14.carplatforms.obd2_client.CloudValueProvider;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDDataSource;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDDataSource.IResultListener;
 
 
-public class Filter implements IResultListener, TempCloudValueProviderInterface{
+public class Filter implements IResultListener, CloudValueProvider {
 
 	private OBDDataSource source;
 	private float updateRate;
@@ -54,6 +55,18 @@ public class Filter implements IResultListener, TempCloudValueProviderInterface{
 	@Override
 	public long getOutputTickInterval() {
 		return (long)outputRate;
+	}
+
+	@Override
+	public void tickQuery() {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void tickOutput() {
+		// TODO Auto-generated method stub
+		
 	}
 
 }
