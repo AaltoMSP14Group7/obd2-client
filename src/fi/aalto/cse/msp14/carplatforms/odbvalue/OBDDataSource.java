@@ -15,6 +15,8 @@ import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.ValueEvaluatorFactory;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.IValueEvaluator.Type;
 
 public class OBDDataSource {
+	private final static long					QR_FORCE_REQUERY_TIMEOUT 	= 10000000000L; // 10s
+	
 	private final OBDSourceDefinition 			m_definition;
 	private final IValueEvaluator 				m_decoder;
 	private final OBDLinkManager				m_linkManager;
@@ -22,11 +24,13 @@ public class OBDDataSource {
 	private final ArrayList<IResultListener>	m_listeners;
 	
 	private class Query extends OBD2DataQuery {
-		public boolean m_active;
+		public boolean 	m_active;
+		public long 	m_timestamp;
 		
 		public Query(int pid, int expectedBytes) {
 			super(pid, expectedBytes);
 			m_active = false;
+			m_timestamp = System.nanoTime();
 		}
 
 		@Override
@@ -92,10 +96,17 @@ public class OBDDataSource {
 		// allows filters to "spam" update and still
 		// have the link to serve data in round-robin
 		// order.
-		if (m_query.m_active)
+		// However, a timeout is maintained to prevent
+		// a missing callback from blocking the query
+		// indefinitely. This can only happen if obd
+		// service loop is force killed and restarted.
+		// (or queries are just extremely slow).
+		
+		if (m_query.m_active && (System.nanoTime() - m_query.m_timestamp) < QR_FORCE_REQUERY_TIMEOUT)
 			 return;
 		
 		m_query.m_active = true;
+		m_query.m_timestamp = System.nanoTime();
 		m_linkManager.submitDataQuery(m_query);
 	}
 	
