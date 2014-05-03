@@ -15,6 +15,7 @@ public class Scheduler {
 	
 	private final HashMap<String, ValueProviderTask> filters;
 	private Timer timer;
+	private Timer timerOutput;
 	private boolean running;
 
 	/**
@@ -63,12 +64,18 @@ public class Scheduler {
 	 * Unregister all CloudValueProviders.
 	 */
 	public void unregisterAll() {
-		synchronized(filters) {
-			TimerTask task;
-			for (String key : filters.keySet()) {
-				task = filters.remove(key);
-				task.cancel();
+		try {
+			synchronized(filters) {
+				TimerTask task;
+				for (String key : filters.keySet()) {
+					task = filters.remove(key);
+					if (running) {
+						task.cancel();
+					}
+				}
 			}
+		} catch (Exception e) { // TODO
+			e.printStackTrace();
 		}
 	}
 	

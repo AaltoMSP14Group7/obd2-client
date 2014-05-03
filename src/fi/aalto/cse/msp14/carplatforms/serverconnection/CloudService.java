@@ -2,6 +2,7 @@ package fi.aalto.cse.msp14.carplatforms.serverconnection;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.http.HttpResponse;
@@ -14,7 +15,6 @@ import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
 
 import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
-import android.R;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.Service;
@@ -23,8 +23,11 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Message;
+import android.os.Messenger;
 import android.os.PowerManager;
 import android.os.Process;
 
@@ -40,6 +43,7 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	private static final String URI_SERVER = "http://ec2-54-186-67-231.us-west-2.compute.amazonaws.com:9000/addDataPoint";
 	
 	private PowerManager.WakeLock wakelock;
+	private static long t = System.nanoTime();
 	
 	private boolean keepalive;
 	private boolean waitingForConnection;
@@ -48,27 +52,49 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	private ConnectionListener conStateBCListener;
 	private CloudConnection cloud;
 	private SaveDataMessage current;
-	private static CloudService instance;
 	
 	private boolean started = false; // One-way flag which represents if this service has already been started once.
+	
+	// Messaging related stuff
+	final Messenger messenger = new Messenger(new IncomingHandler());
+	ArrayList<Messenger> statusListeners = new ArrayList<Messenger>(); // All status listeners
+	
+	public static final int MSG_GET_XML = 1;
+	public static final int MSG_MSG = 2;
+	public static final int MSG_REGISTER_AS_STATUS_LISTENER = 3;
 	
 	/**
 	 * 
 	 */
 	public CloudService() {
+		System.out.println("Create new");
 		current = null;
 		keepalive = true;
 	}
 	
+	
 	/**
 	 * 
-	 * @return
-	 * @throws NotCreatedYetException
+	 * @author Maria
+	 *
 	 */
-	public static CloudService getInstance() throws NotCreatedYetException {
-		if (instance == null) throw new NotCreatedYetException();
-		return instance;
-	}
+	class IncomingHandler extends Handler { // Handler of incoming messages from clients.
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+            case MSG_GET_XML:
+            	// Send response to msg.replyTo
+                break;
+            case MSG_MSG:
+                break;
+            case MSG_REGISTER_AS_STATUS_LISTENER:
+            	statusListeners.add(msg.replyTo);
+            	break;
+            default:
+                super.handleMessage(msg);
+            }
+        }
+    }
 	
 	/**
 	 * Requests wake lock which keeps CPU running even if the device is otherwise sleeping: 
@@ -83,8 +109,9 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	@Override
 	public void onCreate() {
 		System.out.println("SERVICE ON CREATE " + started);
-		instance = this;
-		System.out.println("Joojoo");
+		//instance = this; // OK, this is quite stupid way to do this, but for now much easier than using MessageQueue and Messages by Android
+						 // And something to notice: when using this method, the server MUST be run on the same process.
+		System.out.println("time2 " + t);
 		messages = new LinkedBlockingQueue<SaveDataMessage>();
 
 		// Testing notifications
@@ -94,7 +121,7 @@ public class CloudService extends Service implements ServerConnectionInterface {
 		new Notification.Builder(this)
 	    .setContentTitle("OBD2 client")
 	    .setContentText("Service is running")
-	    .setSmallIcon(R.drawable.ic_notification_overlay) // TODO maybe should change this icon
+	    .setSmallIcon(android.R.drawable.ic_notification_overlay) // TODO maybe should change this icon
 	    .setOngoing(true);
 	    Notification noti = nBuild.build();
 	    int id = 1;
@@ -115,22 +142,12 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
 		System.out.println("SERVICE ON START "  + started);
-/*		if (!started) {
-			// Only fetch the lock if one does not exist yet!
-			started = true;
-			requestWakeLock();
-			cloud = new CloudConnection();
-			Thread t = new Thread(cloud);
-			t.setPriority(Process.THREAD_PRIORITY_BACKGROUND);
-			t.start();
-		}
-		*/
 		return START_STICKY;
 	}
 
 	@Override
 	public IBinder onBind(Intent intent) {
-		return null;
+		return messenger.getBinder();
 	}
 
 	@Override
@@ -299,7 +316,6 @@ public class CloudService extends Service implements ServerConnectionInterface {
 			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
 				// Yay! Now we got the wanted XML specs!
 				// So. What exactly TODO now?
-				
 			} else {
 				// Something happened. What TODO now? 
 			}

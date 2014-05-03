@@ -16,7 +16,7 @@ import android.widget.TextView;
  * @author Maria
  *
  */
-public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into something more informative */> {
+public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO into something more informative */> {
 	
 	private AsyncTask currentTask;
 	private BootActivity parent; // Not just activity, because some things have to be passed to this one.
@@ -26,7 +26,7 @@ public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into s
 	 * 
 	 * @param activity
 	 */
-	public BootStrapper(BootActivity activity) {
+	public BootStrapperTask(BootActivity activity) {
 		assert(activity != null);
 		parent = activity;
 		ProgressBar pb = (ProgressBar) activity.findViewById(R.id.progressBar1);
@@ -58,12 +58,20 @@ public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into s
         
         // TODO Create OBD sources
 		
-        // TODO Create CloudValueProviders. And remove these vvv
+        
 		publishProgress("Starting process");
-		createCloudValueProviders(scheduler);
+		createCloudValueProviders(scheduler); // TODO Create CloudValueProviders.
 		if (this.isCancelled()) return false;
 
 		publishProgress("Connection done!");
+		
+		if (!this.isCancelled()) {
+			Session s = Session.getSession();
+			s.setActive(true);
+			s.setCloud(cloud);
+			s.setScheduler(scheduler);
+			s.setState(ProgramState.STARTED);
+		}
 		return true;
 	}
 
@@ -178,8 +186,17 @@ public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into s
         new CancelBootStrapper().execute();
     }
     
+    /*
+     * ------------------------------------------------------------------------
+     * Another class
+     * ------------------------------------------------------------------------
+     */
+
     /**
      * This class only takes care of canceling everything what was done before.
+     * This is needed if in the middle of initialization (before the task is finished)
+     * the user decides to cancel whole the connection thing.
+     * 
      * @author Maria
      *
      */
@@ -203,7 +220,7 @@ public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into s
 		@Override
 		protected void onPostExecute(Void v) {
 			TextView tw = (TextView) parent.findViewById(R.id.textView3);
-			tw.setText(R.string.state_cancelling);
+			tw.setText(R.string.state_connection_cancelled);
 			
 	        parent.changeButtonAppearance(ProgramState.IDLE);
 		}

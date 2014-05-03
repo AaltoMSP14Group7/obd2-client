@@ -14,7 +14,47 @@ public class Session {
 	
 	private Scheduler scheduler;
 	
-	private ProgramState state;
+	private ProgramState state  = ProgramState.IDLE;
+
+	private boolean active;
+	
+	private static final Session instance = new Session();
+	
+	private Session() {
+		active = false;
+	}
+
+	/**
+	 * Because of lifecycle of Activities in Android, preserving this data is
+	 * easiest if using just a singleton. (Otherwise should be using 
+	 * for example Parcelable and it would mean a lot of work for nothing.)
+	 * 
+	 * @return
+	 */
+	public static Session getSession() {
+		return instance;
+	}
+	
+	/**
+	 * 
+	 * @return
+	 */
+	public boolean isActive() {
+		return this.active;
+	}
+	
+	/**
+	 * 
+	 * @param active
+	 */
+	public void setActive(boolean active) {
+		if (!active) {
+			this.cloud = null;
+			this.scheduler = null;
+			this.state = ProgramState.IDLE;
+		}
+		this.active = active;
+	}
 
 	/**
 	 * 

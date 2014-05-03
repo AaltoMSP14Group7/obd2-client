@@ -14,6 +14,8 @@
     <!-- These are used to tell the user that what is happenning in connection attempt -->
     <string name="state_connection_failed">Connection failed!</string>
     <string name="state_connection_established">Connection established</string>
+    <string name="state_connection_closed">Connection closed</string>
+    <string name="state_connection_cancelled">Connection attempt cancelled</string>
     <string name="state_disconnecting">Disconnecting, please wait</string>
     <string name="state_cancelling">Cancelling, please wait</string>
 </resources>

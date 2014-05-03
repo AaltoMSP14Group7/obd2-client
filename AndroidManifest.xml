@@ -44,7 +44,6 @@
         </activity>
         <service 
             android:name="fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService"
-            android:process=":fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService"
             android:exported="false">
         </service>
     </application>
