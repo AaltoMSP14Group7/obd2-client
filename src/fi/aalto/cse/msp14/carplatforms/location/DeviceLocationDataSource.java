@@ -1,5 +1,7 @@
 package fi.aalto.cse.msp14.carplatforms.location;
 
+import java.util.Date;
+
 import android.content.Context;
 import android.location.Location;
 import android.location.LocationListener;
@@ -43,8 +45,9 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 
 	@Override
 	public void tickOutput() {
-		double[] coords = { 12.121212, -21.212121 };
-		SaveDataMessage message = new JSONSaveDataMessage("TODO deviceId", "TODO VIN", 666666666, "location", coords);
+		double[] coords = { location.getLatitude(), location.getLongitude() };
+		long timestamp = new Date().getTime() / 1000;
+		SaveDataMessage message = new JSONSaveDataMessage("TODO deviceId", "TODO VIN", timestamp, "location", coords);
 		server.sendMessage(message);
 	}
 	
