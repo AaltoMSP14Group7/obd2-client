@@ -15,6 +15,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -1525,6 +1526,84 @@ public final class OBDLinkManager {
 		throw new CommandFailedException("Too many power state changes during power state query");
 	}
 
+	private String queryTargetVIN(final BluetoothSocket socket) throws CommandFailedException, VehiclePowerStateInterruptException, OBDNegativeResponseException {
+		final String response = queryAdapterString(socket, "0902\r", BT_DATA_QUERY_LONG_TIMEOUT);
+
+		// Data is hexadecimal?
+		final byte[] responseData = OBDHexStringToData(response);
+		if (responseData == null || responseData.length == 0)
+			throw new CommandFailedException("VIN query failed, result data is not valid hex string. Response " + response);
+		
+		// Negative response?
+		if (responseData[0] == 0x7f)
+		{
+			if (responseData[1] == 0x09)
+				throw new OBDNegativeResponseException();
+			
+			throw new OBDResponseErrorException("Got illegal negative response for a query. Response " + OBDDataToString(responseData));
+		}
+		
+		// Not a positive response? (max 17 packets)
+		if (responseData.length < 3 || responseData[0] != 0x49 || responseData[1] != 0x02 || responseData[2] > 17)
+			throw new OBDResponseErrorException("Got illegal response for a query. Response " + OBDDataToString(responseData));
+		
+		// Collect packets
+		final TreeMap<Integer, ArrayList<Byte>> packets = new TreeMap<Integer, ArrayList<Byte>>();
+		ArrayList<Byte> currentSink = null;
+		for (int readNdx = 0; readNdx < responseData.length; )
+		{
+			// packet header? (cannot be payload since payload must be ASCII, and 0x02 is not printable)
+			if (readNdx + 2 < responseData.length 	&&
+				responseData[readNdx+0] == 0x49 	&&
+				responseData[readNdx+1] == 0x02		&&
+				responseData[readNdx+2] <= 17)
+			{
+				final int currentPacketNdx = responseData[readNdx+2];
+				
+				if (packets.containsKey(currentPacketNdx))
+					throw new OBDResponseErrorException("Got illegal response for a query, non-unique index. Response " + OBDDataToString(responseData));
+				
+				packets.put(currentPacketNdx, new ArrayList<Byte>());
+				currentSink = packets.get(currentPacketNdx);
+				readNdx += 3;
+			}
+			// payload
+			else {
+				if (currentSink == null)
+					throw new OBDResponseErrorException("Got illegal response for a query, no sink. Response " + OBDDataToString(responseData));
+				
+				currentSink.add(responseData[readNdx]);
+				readNdx += 1;
+			}
+		}
+		
+		// Read from packets in sorted order. (VIN is 17 bytes)
+		final byte[] vinData	= new byte[17];
+		int writeNdx 			= 0;
+		int previousPacketNdx 	= -1;
+		
+		for ( int packetNdx : packets.keySet()) {
+			// No missing packets
+			if (previousPacketNdx != -1 && packetNdx != previousPacketNdx + 1)
+				throw new OBDResponseErrorException("Got illegal response for a query, missing packet " + (previousPacketNdx+1) + ". Response " + OBDDataToString(responseData));
+			previousPacketNdx = packetNdx;
+			
+			// Write data
+			for (int dataNdx = 0; dataNdx < packets.get(packetNdx).size(); ++dataNdx) {
+				// All over 17 byte boundary must be null
+				if (writeNdx >= 17 && packets.get(packetNdx).get(dataNdx) != 0x00)
+					throw new OBDResponseErrorException("Got illegal response for a query, non-null byte after defined limit, index " + writeNdx + ". Response " + OBDDataToString(responseData));
+				else if (writeNdx < 17)
+					vinData[writeNdx++] = packets.get(packetNdx).get(dataNdx);
+			}
+		}
+		
+		if (writeNdx != 17)
+			throw new OBDResponseErrorException("Got illegal response for a query, too short result, expected 17, got " + writeNdx + " bytes. Response " + OBDDataToString(responseData));
+		
+		return convertOBDDataToString(vinData);
+	}
+	
 	private byte[] queryOBDData(final BluetoothSocket socket, final String command) throws CommandFailedException, VehiclePowerStateInterruptException, OBDNegativeResponseException {
 		return queryOBDData(socket, command, BT_DATA_QUERY_TIMEOUT);
 	}
@@ -1766,12 +1845,15 @@ public final class OBDLinkManager {
 
 			// Read VehicleID
 			try {
-				m_vehicleID = convertOBDDataToString(queryOBDData(socket, "0902\r"));
+				m_vehicleID = queryTargetVIN(socket);
 			} catch (OBDNegativeResponseException ex) {
 				Log.e(LOG_TAG, "Could not query VIN, negative response.");
 				m_vehicleID = "unknown";
 			} catch (CommandNoResultDataException ex) {
 				Log.e(LOG_TAG, "Could not query VIN, no response.");
+				m_vehicleID = "unknown";
+			} catch (OBDResponseErrorException ex) {
+				Log.e(LOG_TAG, "Could not query VIN, unexpected data.");
 				m_vehicleID = "unknown";
 			}
 
