@@ -1604,6 +1604,54 @@ public final class OBDLinkManager {
 		return convertOBDDataToString(vinData);
 	}
 	
+	private String generateFakeVIN () {
+		// generate "VIN" from capabilities
+		
+		// Use PHONY; prefix to make sure VIN cannot collide with a real one ('O' is not used in real VINs)
+		String returnValue = "PHONY;";
+		
+		// Encode capabilities
+		final class BitRange {
+			final OBDCapabilityBitSet source;
+			final int startNdx;
+			
+			BitRange ( OBDCapabilityBitSet source_, int startNdx_ ) {
+				startNdx = startNdx_;
+				source = source_;
+			}
+		};
+		
+		final BitRange bitRanges[] =
+		{
+			new BitRange( m_obd09CapabilityBitSet, 1+6*0 ), // \note: Add 1+ xxx since the first bit cannot be queried (no entropy)
+			new BitRange( m_obd01CapabilityBitSet, 1+6*0 ),
+			new BitRange( m_obd01CapabilityBitSet, 1+6*1 ),
+			new BitRange( m_obd01CapabilityBitSet, 1+6*2 ),
+			new BitRange( m_obd01CapabilityBitSet, 1+6*3 ),
+			
+			new BitRange( m_obd01CapabilityBitSet, 1+6*4 ),
+			new BitRange( m_obd01CapabilityBitSet, 1+6*5 ),
+			new BitRange( m_obd01CapabilityBitSet, 1+6*6 ),
+			new BitRange( m_obd01CapabilityBitSet, 1+6*7 ),
+			new BitRange( m_obd01CapabilityBitSet, 1+6*8 ),
+		};
+		
+		// select 10 6-bit integers and encode them to
+		for (BitRange range : bitRanges) {
+			final String encodeBase = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ<>|!#%&/()=?\\@${}[]+-*_,.;:~";
+			final int baseNdx = ((range.source.queryBit(range.startNdx+0)) ? (0x01) : (0x00)) |
+								((range.source.queryBit(range.startNdx+1)) ? (0x02) : (0x00)) |
+								((range.source.queryBit(range.startNdx+2)) ? (0x04) : (0x00)) |
+								((range.source.queryBit(range.startNdx+3)) ? (0x08) : (0x00)) |
+								((range.source.queryBit(range.startNdx+4)) ? (0x10) : (0x00)) |
+								((range.source.queryBit(range.startNdx+5)) ? (0x20) : (0x00));
+			
+			returnValue += encodeBase.charAt(baseNdx);
+		}
+		
+		return returnValue;
+	}
+	
 	private byte[] queryOBDData(final BluetoothSocket socket, final String command) throws CommandFailedException, VehiclePowerStateInterruptException, OBDNegativeResponseException {
 		return queryOBDData(socket, command, BT_DATA_QUERY_TIMEOUT);
 	}
@@ -1813,7 +1861,7 @@ public final class OBDLinkManager {
 			return fakeResult;
 		}
 	}
-
+	
 	private void activateOBD(final BluetoothSocket socket) throws CommandFailedException, VehiclePowerStateInterruptException {
 		// Vehicle seems to be ON, try query data
 		Log.i(LOG_TAG, "Checking vehicle data");
@@ -1844,17 +1892,25 @@ public final class OBDLinkManager {
 			}
 
 			// Read VehicleID
+			String vehicleID = null;
 			try {
-				m_vehicleID = queryTargetVIN(socket);
+				vehicleID = queryTargetVIN(socket);
 			} catch (OBDNegativeResponseException ex) {
 				Log.e(LOG_TAG, "Could not query VIN, negative response.");
-				m_vehicleID = "unknown";
 			} catch (CommandNoResultDataException ex) {
 				Log.e(LOG_TAG, "Could not query VIN, no response.");
-				m_vehicleID = "unknown";
 			} catch (OBDResponseErrorException ex) {
 				Log.e(LOG_TAG, "Could not query VIN, unexpected data.");
-				m_vehicleID = "unknown";
+			}
+			
+			// VIN succeeded
+			if (vehicleID != null)
+				m_vehicleID = vehicleID;
+			else
+			{
+				// Fake it
+				Log.e(LOG_TAG, "Faking VIN to allow vehicle identification");
+				m_vehicleID = generateFakeVIN();
 			}
 
 			Log.i(LOG_TAG, "Implementation information query complete.");
@@ -1879,7 +1935,7 @@ public final class OBDLinkManager {
 			buf.append((char) data[ndx]);
 		return buf.toString();
 	}
-
+	
 	private void processQuery(final OBD2DataQuery query) throws TransportFailedException, VehicleShutdownException {
 		final String commandString = String.format("01%02X\r", query.getPID());
 		final byte[] commandData = new byte[] { 0x01, (byte) query.getPID() };
