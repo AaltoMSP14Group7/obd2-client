@@ -31,7 +31,7 @@ public class Scheduler {
 	 * One can register filters even if the scheduler is not running yet.
 	 * @throws Exception 
 	 */
-	public void registerFilter(String name, TempCloudValueProviderInterface valueProvider/* TODO params? */) 
+	public void registerFilter(String name, CloudValueProvider valueProvider/* TODO params? */) 
 			throws ValueProviderAlreadyExistsException {
 		// TODO?
 		if (filters.containsKey(name)) { // This exists already!
@@ -116,26 +116,26 @@ public class Scheduler {
 	 */
 	private class ValueProviderTask extends TimerTask {
 
-		private TempCloudValueProviderInterface valueProvider;
+		private CloudValueProvider valueProvider;
 		
 		/**
 		 * Constructor.
 		 * @param provider
 		 */
-		ValueProviderTask(TempCloudValueProviderInterface provider) {
+		ValueProviderTask(CloudValueProvider provider) {
 			this.valueProvider = provider;
 		}
 		
 		@Override
 		public void run() {
-			this.valueProvider.tick();
+			this.valueProvider.tickQuery();
 		}
 		
 		/**
 		 * 
 		 * @return
 		 */
-		TempCloudValueProviderInterface getValueProvider() {
+		CloudValueProvider getValueProvider() {
 			return this.valueProvider;
 		}
 	}
