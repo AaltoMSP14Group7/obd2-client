@@ -44,8 +44,15 @@ public class CloudService extends Service {
 	private PowerManager.WakeLock wakelock;
 	private static long t = System.nanoTime();
 	
+	/*
+	 * Different components
+	 */
 	private CloudConnection cloud;
+	private Scheduler scheduler;
 	private BootStrapperTask task;
+
+	private String prevState = null;
+	private String prevTxt = null;
 	
 	private static boolean started = false;
 	
@@ -77,8 +84,29 @@ public class CloudService extends Service {
             	// TODO handle message
                 break;
             case MSG_REGISTER_AS_STATUS_LISTENER:
-            	System.out.println("SERVICE GOT MESSAGE " + msg.replyTo + " " + t);
             	statusListeners.add(msg.replyTo);
+            	if (prevState != null) {
+            		try {
+                		Bundle b = new Bundle();
+                        b.putString("str1", prevState);
+                        Message msg1 = Message.obtain(null, MSG_PUB_STATUS);
+                        msg1.setData(b);
+                        msg.replyTo.send(msg1);
+            		} catch (Exception e) {
+            			e.printStackTrace();
+            		} // Didn't succeed. Shame.
+            	}
+            	if (prevTxt != null) {
+            		try {
+                		Bundle b2 = new Bundle();
+                        b2.putString("str1", prevTxt);
+                        Message msg2 = Message.obtain(null, MSG_PUB_STATUS_TXT);
+                        msg2.setData(b2);
+                        msg.replyTo.send(msg2);
+            		} catch (Exception e) {
+            			e.printStackTrace();
+            		} // Didn't succeed. Shame.
+            	}
             	break;
             case MSG_UNREGISTER_AS_STATUS_LISTENER:
             	statusListeners.remove(msg.replyTo);
@@ -113,8 +141,14 @@ public class CloudService extends Service {
                 msg.setData(b);
                 statusListeners.get(i).send(msg);
             } catch (RemoteException e) {
+            	System.out.println("EXCEPTION broadcasting: " + e.toString());
             	statusListeners.remove(i); // TODO Be careful for concurrent modification exception!
             }
+        }
+        if (type == MSG_PUB_STATUS_TXT) {
+        	prevTxt = value1;
+        } else if (type == MSG_PUB_STATUS) {
+        	prevState = value1;
         }
     }
 	
@@ -130,12 +164,8 @@ public class CloudService extends Service {
 
 	@Override
 	public void onCreate() {
-		System.out.println("SERVICE ON CREATE " + started);
-	    if (!started) {
 			task = null;
 			
-		    started = true;
-	
 			// Create notification which tells that this service is running.
 			NotificationManager mNotifyManager =
 			        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -152,20 +182,20 @@ public class CloudService extends Service {
 		    // Notification created!
 
 			requestWakeLock();
+	}
+	  
+	@Override
+	public int onStartCommand(Intent intent, int flags, int startId) {
+	    if (!started) {
+		    started = true;
 			cloud = new CloudConnection(this);
 			Thread t = new Thread(cloud);
 			t.setPriority(Process.THREAD_PRIORITY_BACKGROUND);
 			t.start();
 
-			System.out.println("Start task");
 			task = new BootStrapperTask(this);
 			task.execute();
 	    }
-	}
-	  
-	@Override
-	public int onStartCommand(Intent intent, int flags, int startId) {
-		Log.i("LocalService", "Received start id " + startId + ": " + intent);
 		return START_STICKY;
 	}
 
@@ -177,7 +207,6 @@ public class CloudService extends Service {
 	@Override
 	public void onDestroy() {
 		super.onDestroy();
-		System.out.println("ON DESTROY");
 		NotificationManager mNotifyManager =
 		        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		int id = 1;
@@ -190,10 +219,10 @@ public class CloudService extends Service {
 	}
 
 	/**
-	 * 
+	 * Any possible exception should not cause that some components are not stopped. So,
+	 * catch for ANY even slightly possible exceptions!
 	 */
 	private void stop() {
-		System.out.println("STOP CALLED!");
 		if (cloud != null) {
 			cloud.stop();
 		}
@@ -204,6 +233,14 @@ public class CloudService extends Service {
 			} catch (Exception e) {
 				System.out.println(e.toString());
 				// Do nothing
+			}
+		}
+		if (scheduler != null) {
+			try {
+				scheduler.pause();
+				scheduler = null;
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
 		}
 	}
@@ -241,14 +278,12 @@ public class CloudService extends Service {
 		@Override
 		protected Boolean doInBackground(Void... params) {
 			// TODO bluetooth
-			publishProgress("Starting service");
-	        
 	        publishProgress("Connecting bluetooth");
 			connectBluetooth();
 			if (this.isCancelled()) return false;
 			
 			publishProgress("Creating content");
-			Scheduler scheduler = new Scheduler(); // TODO something with it.
+			scheduler = new Scheduler();
 	        scheduler.start();
 
 	        String deviceID = createID();
@@ -331,14 +366,14 @@ public class CloudService extends Service {
 		 */
 		private boolean connectBluetooth() {
 			try {
-				Thread.sleep(2000); // TODO bluetooth connection waiting.
+				Thread.sleep(20000); // TODO bluetooth connection waiting.
 			} catch(Exception e) {}
 			return true;
 		}
 
 		@Override
 		public void onProgressUpdate(String... text) {
-			System.out.println("Progress update");
+			//System.out.println("Progress update");
 			if (text.length < 1) return;
 			String newText = text[0];
 			CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, newText, null);
@@ -367,7 +402,7 @@ public class CloudService extends Service {
 
 	    @Override
 	    protected void onCancelled(Boolean v) {
-	        System.out.println("CANCEL!");
+	        //System.out.println("CANCEL!");
 	        new CancelBootStrapper().execute();
 	    }
 	    
@@ -391,16 +426,13 @@ public class CloudService extends Service {
 		        if (currentTask != null) {
 		        	currentTask.cancel(true);
 		        }
-				System.out.println("CANCELLING...");
 				return null;
 			}
 			@Override
 			protected void onPostExecute(Void v) {
-				System.out.println("DONE?");
 				CloudService.this.broadcast(MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
 				CloudService.this.broadcast(MSG_PUB_STATUS_TXT, CloudService.this.getText(R.string.state_connection_cancelled).toString(), null);
 				CloudService.this.stopSelf();
-				System.out.println("DONE!");
 			}
 	    }
 	}

@@ -38,19 +38,21 @@ public class BootActivity extends Activity {
 	private ServiceConnection mConnection = new ServiceConnection() {
 		@Override
         public void onServiceConnected(ComponentName className, IBinder service) {
+			System.out.println("SERVICE CONNECTED");
         	serviceMessenger = new Messenger(service);
             try {
                 Message msg = Message.obtain(null, CloudService.MSG_REGISTER_AS_STATUS_LISTENER);
                 msg.replyTo = messenger;
                 serviceMessenger.send(msg);
             } catch (RemoteException e) {
-                // In this case the service has crashed before we could even do anything with it
+            	System.out.println("Sending message " + e.toString());
             }
         }
 
 		@Override
         public void onServiceDisconnected(ComponentName className) {
             // This is called when the connection with the service has been unexpectedly disconnected - process crashed.
+			System.out.println("SERVICE DISCONNECTED");
 			serviceMessenger = null;
         }
     };
@@ -79,7 +81,6 @@ public class BootActivity extends Activity {
 	
 	@Override
 	public void onSaveInstanceState(Bundle output) {
-		System.out.println("Save instance !!!!!!!!!!!!");
 		output.putInt(KEY_PB_V, (findViewById(R.id.progressBar1)).getVisibility());
 		output.putInt(KEY_TW_V, (findViewById(R.id.textView3)).getVisibility());
 		output.putString(KEY_TW_TXT, ((TextView)(findViewById(R.id.textView3))).getText().toString());
@@ -93,7 +94,6 @@ public class BootActivity extends Activity {
 	 * @param text
 	 */
 	public void changeButtonAppearance(ProgramState state) {
-		System.out.println("SETTING STATE: " + state.name());
 		switch(state) {
 			case IDLE:
 				progstate = ProgramState.IDLE;
@@ -186,12 +186,14 @@ public class BootActivity extends Activity {
 	 * Tries to start service.
 	 */
 	private void startOwnService() {
-		System.out.println("STARTING SERVICE 1 ");
 		if (cloud == null) {
-			System.out.println("STARTING SERVICE 2");
 			cloud = new Intent(this, CloudService.class);
-			startService(cloud);
-			bindService(new Intent(this, CloudService.class), mConnection, Context.BIND_AUTO_CREATE);
+			new Thread() {
+				public void run() {
+					startService(cloud);
+					bindService(new Intent(BootActivity.this, CloudService.class), mConnection, Context.BIND_AUTO_CREATE);
+				}
+			}.start();
 			isBound = true;
 		}
 	}
@@ -217,7 +219,6 @@ public class BootActivity extends Activity {
     private void stopService() {
         if (cloud != null) {
         	this.unbindService(mConnection);
-        	System.out.println("Stopping service");
         	stopService(cloud);
         	cloud = null;
         	isBound = false;
@@ -226,7 +227,6 @@ public class BootActivity extends Activity {
 	
 	@Override
 	protected void onDestroy() {
-		System.out.println("BOOT ACTIVITY ON DESTROY");
 		super.onDestroy();
 		unbind();
 	}
@@ -235,8 +235,20 @@ public class BootActivity extends Activity {
 	 * 
 	 */
 	private void unbind() {
-        if (cloud != null) {
-        	this.unbindService(mConnection);
+		System.out.println("UNBIND");
+        if (cloud != null && this.isBound) {
+        	try {
+        		try {
+                    Message msg = Message.obtain(null, CloudService.MSG_UNREGISTER_AS_STATUS_LISTENER);
+                    msg.replyTo = messenger;
+                    serviceMessenger.send(msg);
+                } catch (RemoteException e) {
+                	e.printStackTrace();
+                }
+            	this.unbindService(mConnection);
+        	} catch (Exception e) { // Probably for some reason it has not been bound at the moment
+        		e.printStackTrace();
+        	}
         }
 	}
 
