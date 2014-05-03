@@ -8,6 +8,7 @@ import android.widget.*;
 public class BootActivity extends Activity {
 	
 	private BootStrapper task;
+	private Session session = null;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -78,6 +79,7 @@ public class BootActivity extends Activity {
 					TextView tw = (TextView) findViewById(R.id.textView3);
 					tw.setText(R.string.state_disconnecting);
 					// TODO Stop
+					// How to stop?
 				}
 			});
 			break;

@@ -39,34 +39,39 @@ public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into s
 		publishProgress("Starting service");
         cloud = new Intent(parent, CloudService.class);
         parent.startService(cloud);
-		publishProgress("Connecting bluetooth");
-		try {
-			Thread.sleep(2000); // TODO bluetooth connection waiting.
-		} catch(Exception e) {}
 		
+        
+        publishProgress("Connecting bluetooth");
+		connectBluetooth();
 		if (this.isCancelled()) return false;
 		
-		Scheduler scheduler = new Scheduler(); // TODO something with it.
-		String deviceID = createID();
-		
 		publishProgress("Creating content");
+		Scheduler scheduler = new Scheduler(); // TODO something with it.
+        scheduler.start();
+
+        String deviceID = createID();
 		if (this.isCancelled()) return false;
         
         // TODO Now, fetch from cloud that what to get
-        try {
-			CloudService.getInstance().getXML();
-		} catch (IllegalThreadUseException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		} catch (NotCreatedYetException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		} // No problems if this blocks, because this is done in background!
+		fetchXMLSpecs();
 		if (this.isCancelled()) return false;
         
         // TODO Create OBD sources
-        
+		
         // TODO Create CloudValueProviders. And remove these vvv
+		publishProgress("Starting process");
+		createCloudValueProviders(scheduler);
+		if (this.isCancelled()) return false;
+
+		publishProgress("Connection done!");
+		return true;
+	}
+
+	/**
+	 * TODO real things
+	 * @param scheduler
+	 */
+	private void createCloudValueProviders(Scheduler scheduler) {
         TempCloudValueProviderInterface cvp1 = new TempCloudValueProviderInterface() {
 			@Override
 			public void tick() {
@@ -82,7 +87,7 @@ public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into s
 				return 10000;
 			}
         };
-		if (this.isCancelled()) return false;
+
         TempCloudValueProviderInterface cvp2 = new TempCloudValueProviderInterface() {
 			@Override
 			public void tick() {
@@ -98,18 +103,38 @@ public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into s
 				return 15000;
 			}
         };
-		if (this.isCancelled()) return false;
-		publishProgress("Starting process");
-        scheduler.start();
-		if (this.isCancelled()) return false;
+
+        if (this.isCancelled()) return;
         try {
             scheduler.registerFilter("Test1", cvp1);
             scheduler.registerFilter("Test2", cvp2);
         } catch (Exception e) {}
         // TODO Remove those ^^^
-        
-		publishProgress("Connection done!");
+	}
 
+	/**
+	 * TODO should return something and actually do something.
+	 */
+	private void fetchXMLSpecs() {
+        try {
+			CloudService.getInstance().getXML();
+		} catch (IllegalThreadUseException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		} catch (NotCreatedYetException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		} // No problems if this blocks, because this is done in background!
+	}
+
+	/**
+	 * TODO Bluetooth connection.
+	 * @return
+	 */
+	private boolean connectBluetooth() {
+		try {
+			Thread.sleep(2000); // TODO bluetooth connection waiting.
+		} catch(Exception e) {}
 		return true;
 	}
 
@@ -154,7 +179,7 @@ public class BootStrapper extends AsyncTask<Void, String, Boolean /* TODO into s
     }
     
     /**
-     * This class only takes care of cancelling everything what was done before.
+     * This class only takes care of canceling everything what was done before.
      * @author Maria
      *
      */
