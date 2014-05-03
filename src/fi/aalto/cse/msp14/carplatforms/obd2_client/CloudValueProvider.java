@@ -6,9 +6,10 @@ package fi.aalto.cse.msp14.carplatforms.obd2_client;
  * @author Maria
  *
  */
-public interface TempCloudValueProviderInterface {
+public interface CloudValueProvider {
 
-	public void tick();
+	public void tickQuery();
+	public void tickOutput();
 	public long getQueryTickInterval();
 	public long getOutputTickInterval();
 	
