@@ -1,8 +1,18 @@
 package fi.aalto.cse.msp14.carplatforms.obd2_client;
 
+import fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService;
 import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.RemoteException;
 import android.view.View;
 import android.widget.*;
 
@@ -16,8 +26,32 @@ public class BootActivity extends Activity {
 	private static final String KEY_TW_V = "obd2KeyTWvisibility";
 	private static final String KEY_TW_TXT = "obd2KeyTWText";
 	
-	private BootStrapperTask task;
+	private boolean isBound = false;
+	private Intent cloud;
+	private final Messenger messenger = new Messenger(new IncomingHandler());
+	
+	private Messenger serviceMessenger;
 
+	private ServiceConnection mConnection = new ServiceConnection() {
+		@Override
+        public void onServiceConnected(ComponentName className, IBinder service) {
+        	serviceMessenger = new Messenger(service);
+            try {
+                Message msg = Message.obtain(null, CloudService.MSG_REGISTER_AS_STATUS_LISTENER);
+                msg.replyTo = messenger;
+                serviceMessenger.send(msg);
+            } catch (RemoteException e) {
+                // In this case the service has crashed before we could even do anything with it
+            }
+        }
+
+		@Override
+        public void onServiceDisconnected(ComponentName className) {
+            // This is called when the connection with the service has been unexpectedly disconnected - process crashed.
+			serviceMessenger = null;
+        }
+    };
+    
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -26,8 +60,8 @@ public class BootActivity extends Activity {
 		if (savedInstanceState == null) {
 			(findViewById(R.id.progressBar1)).setVisibility(ProgressBar.INVISIBLE);
 			(findViewById(R.id.textView3)).setVisibility(ProgressBar.INVISIBLE);
-			
 			changeButtonAppearance(Session.getSession().getState());
+			
 		} else {
 			changeButtonAppearance(Session.getSession().getState());
 			((TextView)(findViewById(R.id.textView3))).setText(savedInstanceState.getString(KEY_TW_TXT));
@@ -63,9 +97,11 @@ public class BootActivity extends Activity {
 						(findViewById(R.id.textView3)).setVisibility(ProgressBar.VISIBLE); // Show status
 						changeButtonAppearance(ProgramState.STARTING);
 						((TextView)(findViewById(R.id.textView3))).setText("Trying to connect");
-						task = new BootStrapperTask(BootActivity.this);
-						task.execute();
-						// TODO on click
+
+						
+						//task = new BootStrapperTask(BootActivity.this);
+						//task.execute();
+						// TODO Send message to service
 					}
 				});
 				break;
@@ -80,12 +116,15 @@ public class BootActivity extends Activity {
 						(findViewById(R.id.progressBar1)).setVisibility(ProgressBar.VISIBLE); // Show progress bar
 						(findViewById(R.id.textView3)).setVisibility(ProgressBar.VISIBLE); // Show status
 						changeButtonAppearance(ProgramState.CANCELLING);
-						if (task != null) {
-							task.cancel(true);
-							task = null;
-						}
+						
+						startOwnService();
+						//if (task != null) {
+						//	task.cancel(true);
+						//	task = null;
+						//}
 						// TODO cancel
 					}
+
 				});
 				break;
 			case STARTED:
@@ -101,11 +140,14 @@ public class BootActivity extends Activity {
 						TextView tw = (TextView) findViewById(R.id.textView3);
 						tw.setText(R.string.state_disconnecting);
 						changeButtonAppearance(ProgramState.STOPPING);
-						new StopAllTask().execute();
+
+						stopService();
+						//new StopAllTask().execute();
 						// TODO Stop
 					}
 				});
 				break;
+				
 			// The next two states mean that the button is disabled!
 			case CANCELLING:
 				// This 
@@ -134,44 +176,51 @@ public class BootActivity extends Activity {
 	}
 	
 	/**
-	 * This method should take care that all possible connections are closed and
-	 * whatever there is to close or stop, is closed or stopped.
-	 * TODO Cancel all
+	 * Tries to start service.
 	 */
-	public void stopAll() {
-		if (Session.getSession().isActive()) { // There is something to be cancelled
-			Session session = Session.getSession();
-			stopService(session.getCloud());
-			session.getScheduler().pause();
-			session.getScheduler().unregisterAll();
+	private void startOwnService() {
+		if (cloud == null) {
+			cloud = new Intent(this, CloudService.class);
+			startService(cloud);
+			bindService(new Intent(this, CloudService.class), mConnection, Context.BIND_AUTO_CREATE);
 		}
 	}
 	
+    /**
+     * Tries to stop service.
+     */
+    private void stopService() {
+        if (cloud != null) {
+        	stopService(cloud);
+        	cloud = null;
+        }
+    }
+	
 	@Override
 	protected void onDestroy() {
-		stopAll();
 		super.onDestroy();
 	}
-	
-	
+
 	/**
 	 * 
 	 * @author Maria
 	 *
 	 */
-	private class StopAllTask extends AsyncTask<Void, Void, Void> {
-
-		@Override
-		protected Void doInBackground(Void... params) {
-			stopAll();
-			return null;
-		}
-
-		@Override
-		public void onPostExecute(Void v) {
-			changeButtonAppearance(ProgramState.IDLE);
-			TextView tw = (TextView) findViewById(R.id.textView3);
-			tw.setText(R.string.state_connection_closed);
-		}
-	}
+    class IncomingHandler extends Handler {
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+            case CloudService.MSG_PUB_STATUS:
+                String str1 = msg.getData().getString("state");
+                ProgramState stat = ProgramState.valueOf(str1);
+                changeButtonAppearance(stat);
+                break;
+            case CloudService.MSG_PUB_STATUS_TXT:
+                String txt = msg.getData().getString("state");
+                ((TextView)(findViewById(R.id.textView3))).setText(txt);
+            default:
+                super.handleMessage(msg);
+            }
+        }
+    }
 }

@@ -3,6 +3,8 @@ package fi.aalto.cse.msp14.carplatforms.serverconnection;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.http.HttpResponse;
@@ -15,6 +17,7 @@ import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
 
 import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
+import fi.aalto.cse.msp14.carplatforms.obd2_client.BootStrapperTask;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.Service;
@@ -30,6 +33,7 @@ import android.os.Message;
 import android.os.Messenger;
 import android.os.PowerManager;
 import android.os.Process;
+import android.util.Log;
 
 /**
  * 
@@ -53,25 +57,37 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	private CloudConnection cloud;
 	private SaveDataMessage current;
 	
-	private boolean started = false; // One-way flag which represents if this service has already been started once.
+	private static boolean started = false;
 	
 	// Messaging related stuff
 	final Messenger messenger = new Messenger(new IncomingHandler());
 	ArrayList<Messenger> statusListeners = new ArrayList<Messenger>(); // All status listeners
-	
-	public static final int MSG_GET_XML = 1;
-	public static final int MSG_MSG = 2;
-	public static final int MSG_REGISTER_AS_STATUS_LISTENER = 3;
+
+	// These are identifiers for messages.
+	public static final int MSG_START = 0;
+	public static final int MSG_STOP = 1;
+	public static final int MSG_REGISTER_AS_STATUS_LISTENER = 2;
+	public static final int MSG_UNREGISTER_AS_STATUS_LISTENER = 3;
+	public static final int MSG_GET_XML = 4;
+	public static final int MSG_MSG = 5;
+	public static final int MSG_PUB_STATUS = 6;
+	public static final int MSG_PUB_STATUS_TXT = 7;
 	
 	/**
 	 * 
 	 */
 	public CloudService() {
-		System.out.println("Create new");
 		current = null;
 		keepalive = true;
 	}
 	
+	/**
+	 * 
+	 * @return
+	 */
+    public static boolean isRunning() {
+        return started;
+    }
 	
 	/**
 	 * 
@@ -83,12 +99,23 @@ public class CloudService extends Service implements ServerConnectionInterface {
         public void handleMessage(Message msg) {
             switch (msg.what) {
             case MSG_GET_XML:
-            	// Send response to msg.replyTo
+            	// TODO Send response to msg.replyTo
                 break;
             case MSG_MSG:
+            	// TODO handle message
                 break;
             case MSG_REGISTER_AS_STATUS_LISTENER:
+            	System.out.println("SERVICE GOT MESSAGE " + msg.replyTo + " " + t);
             	statusListeners.add(msg.replyTo);
+            	break;
+            case MSG_UNREGISTER_AS_STATUS_LISTENER:
+            	statusListeners.remove(msg.replyTo);
+            	break;
+            case MSG_STOP: // Not used
+            	CloudService.this.fullStop();
+            	break;
+            case MSG_START: // Not used
+            	CloudService.this.start();
             	break;
             default:
                 super.handleMessage(msg);
@@ -109,39 +136,39 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	@Override
 	public void onCreate() {
 		System.out.println("SERVICE ON CREATE " + started);
-		//instance = this; // OK, this is quite stupid way to do this, but for now much easier than using MessageQueue and Messages by Android
-						 // And something to notice: when using this method, the server MUST be run on the same process.
-		System.out.println("time2 " + t);
-		messages = new LinkedBlockingQueue<SaveDataMessage>();
+	    if (!started) {
+		    started = true;
+			messages = new LinkedBlockingQueue<SaveDataMessage>();
+	
+			// Create notification which tells that this service is running.
+			NotificationManager mNotifyManager =
+			        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+			Notification.Builder nBuild = 
+			new Notification.Builder(this)
+			    .setContentTitle("OBD2 client")
+			    .setContentText("Service is running")
+			    .setSmallIcon(android.R.drawable.ic_notification_overlay)
+			    .setOngoing(true);
+		    Notification noti = nBuild.build();
+		    int id = 1;
+		    String tag = "obd2ServerNotifyer";
+		    mNotifyManager.notify(tag, id, noti);
+		    // Notification created!
 
-		// Testing notifications
-		NotificationManager mNotifyManager =
-		        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-		Notification.Builder nBuild = 
-		new Notification.Builder(this)
-	    .setContentTitle("OBD2 client")
-	    .setContentText("Service is running")
-	    .setSmallIcon(android.R.drawable.ic_notification_overlay) // TODO maybe should change this icon
-	    .setOngoing(true);
-	    Notification noti = nBuild.build();
-	    int id = 1;
-	    String tag = "obd2ServerNotifyer";
-	    mNotifyManager.notify(tag, id, noti);
-		if (!started) {
-			// Only fetch the lock if one does not exist yet!
-			started = true;
 			requestWakeLock();
 			cloud = new CloudConnection();
 			Thread t = new Thread(cloud);
 			t.setPriority(Process.THREAD_PRIORITY_BACKGROUND);
 			t.start();
+			
+			new BootStrapperTask(this).execute();
 		}
 	}
 
 	  
 	@Override
 	public int onStartCommand(Intent intent, int flags, int startId) {
-		System.out.println("SERVICE ON START "  + started);
+		 Log.i("LocalService", "Received start id " + startId + ": " + intent);
 		return START_STICKY;
 	}
 
@@ -159,9 +186,19 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	    String tag = "obd2ServerNotifyer";
 	    mNotifyManager.cancel(tag, id);
 		stop();
-		
+	    started = false;
 	}
 
+	public void start() {
+		
+	}
+	
+	/**
+	 * 
+	 */
+	private void fullStop() {
+		this.stopSelf();
+	}
 	/**
 	 * 
 	 */
@@ -233,6 +270,21 @@ public class CloudService extends Service implements ServerConnectionInterface {
 	private final class CloudConnection implements Runnable {
 		@Override
 		public void run() {
+			new Thread(new Runnable() {
+
+				@Override
+				public void run() {
+					for (int i = 0; i < 120; i++) {
+						try {
+							Thread.sleep(1000);
+							Log.i("TESTING_SERVICE", "SLEPT NOW " + i);
+						} catch (Exception e) {
+							
+						}
+					}
+				}
+				
+			}).start();
 			while (keepalive) {
 				if (current == null) {
 					current = CloudService.this.messages.poll();
@@ -269,8 +321,6 @@ public class CloudService extends Service implements ServerConnectionInterface {
 						// Other exception
 					}
 				}
-
-				System.out.println(keepalive + " ja " + CloudService.this.messages.isEmpty() + " ja " + waitingForConnection);
 				while(keepalive && (CloudService.this.messages.isEmpty() || waitingForConnection)) {
 					System.out.println("Wait");
 					synchronized(cloud) {

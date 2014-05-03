@@ -2,7 +2,6 @@ package fi.aalto.cse.msp14.carplatforms.obd2_client;
 
 import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
 import fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService;
-import fi.aalto.cse.msp14.carplatforms.serverconnection.NotCreatedYetException;
 import android.content.Context;
 import android.content.Intent;
 import android.os.AsyncTask;
@@ -19,27 +18,21 @@ import android.widget.TextView;
 public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO into something more informative */> {
 	
 	private AsyncTask currentTask;
-	private BootActivity parent; // Not just activity, because some things have to be passed to this one.
-	private Intent cloud = null;
+	private CloudService parent; // Not just activity, because some things have to be passed to this one.
 	
 	/**
 	 * 
 	 * @param activity
 	 */
-	public BootStrapperTask(BootActivity activity) {
+	public BootStrapperTask(CloudService activity) {
 		assert(activity != null);
 		parent = activity;
-		ProgressBar pb = (ProgressBar) activity.findViewById(R.id.progressBar1);
-		pb.setVisibility(View.VISIBLE);
 	}
 
 	@Override
 	protected Boolean doInBackground(Void... params) {
 		// TODO bluetooth
 		publishProgress("Starting service");
-        cloud = new Intent(parent, CloudService.class);
-        parent.startService(cloud);
-		
         
         publishProgress("Connecting bluetooth");
 		connectBluetooth();
@@ -57,8 +50,6 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
 		if (this.isCancelled()) return false;
         
         // TODO Create OBD sources
-		
-        
 		publishProgress("Starting process");
 		createCloudValueProviders(scheduler); // TODO Create CloudValueProviders.
 		if (this.isCancelled()) return false;
@@ -68,7 +59,6 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
 		if (!this.isCancelled()) {
 			Session s = Session.getSession();
 			s.setActive(true);
-			s.setCloud(cloud);
 			s.setScheduler(scheduler);
 			s.setState(ProgramState.STARTED);
 		}
@@ -124,15 +114,12 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
 	 * TODO should return something and actually do something.
 	 */
 	private void fetchXMLSpecs() {
-        try {
-			CloudService.getInstance().getXML();
-		} catch (IllegalThreadUseException e1) {
+		try {
+			parent.getXML();
+		} catch (IllegalThreadUseException e) {
 			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		} catch (NotCreatedYetException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		} // No problems if this blocks, because this is done in background!
+			e.printStackTrace();
+		}
 	}
 
 	/**
@@ -150,23 +137,11 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
 	public void onProgressUpdate(String... text) {
 		if (text.length < 1) return;
 		String newText = text[0];
-		TextView tw = (TextView) parent.findViewById(R.id.textView3);
-		tw.setText(newText);
 	}
 
 	@Override
 	public void onPostExecute(Boolean v) {
-		TextView tw = (TextView) parent.findViewById(R.id.textView3);
-		if (v != null) { // Successful
-			parent.changeButtonAppearance(ProgramState.STARTED);
-		} else { // Not successful
-			tw.setText(R.string.state_connection_failed);
-			parent.changeButtonAppearance(ProgramState.IDLE);
-		}
-		ProgressBar pb = (ProgressBar) parent.findViewById(R.id.progressBar1);
-		pb.setVisibility(View.GONE);
-
-		// This should be changed?
+		// TODO This should be changed?
 	}
 	
 	/**
@@ -203,13 +178,10 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
     private class CancelBootStrapper extends AsyncTask<Void, Void, Void> {
 		@Override
 		protected Void doInBackground(Void... params) {
+			// TODO 
 	        if (currentTask != null) {
 	        	currentTask.cancel(true);
 	        }
-	        if (cloud != null) {
-	        	parent.stopService(cloud);
-	        }
-	        
 	        try {
 	        	Thread.sleep(3000); // TODO cancelling everything
 	        } catch (Exception e) {
@@ -219,10 +191,7 @@ public class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO in
 		
 		@Override
 		protected void onPostExecute(Void v) {
-			TextView tw = (TextView) parent.findViewById(R.id.textView3);
-			tw.setText(R.string.state_connection_cancelled);
-			
-	        parent.changeButtonAppearance(ProgramState.IDLE);
+			// TODO 
 		}
     }
 }
