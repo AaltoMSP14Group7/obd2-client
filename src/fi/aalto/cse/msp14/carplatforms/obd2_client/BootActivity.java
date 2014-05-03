@@ -1,6 +1,5 @@
 package fi.aalto.cse.msp14.carplatforms.obd2_client;
 
-import fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
@@ -41,7 +40,7 @@ public class BootActivity extends Activity {
 			System.out.println("SERVICE CONNECTED");
         	serviceMessenger = new Messenger(service);
             try {
-                Message msg = Message.obtain(null, CloudService.MSG_REGISTER_AS_STATUS_LISTENER);
+                Message msg = Message.obtain(null, OBD2Service.MSG_REGISTER_AS_STATUS_LISTENER);
                 msg.replyTo = messenger;
                 serviceMessenger.send(msg);
             } catch (RemoteException e) {
@@ -187,11 +186,11 @@ public class BootActivity extends Activity {
 	 */
 	private void startOwnService() {
 		if (cloud == null) {
-			cloud = new Intent(this, CloudService.class);
+			cloud = new Intent(this, OBD2Service.class);
 			new Thread() {
 				public void run() {
 					startService(cloud);
-					bindService(new Intent(BootActivity.this, CloudService.class), mConnection, Context.BIND_AUTO_CREATE);
+					bindService(new Intent(BootActivity.this, OBD2Service.class), mConnection, Context.BIND_AUTO_CREATE);
 				}
 			}.start();
 			isBound = true;
@@ -205,7 +204,7 @@ public class BootActivity extends Activity {
         if (isBound) {
             if (this.serviceMessenger != null) {
                 try {
-                    Message msg = Message.obtain(null, CloudService.MSG_CANCEL);
+                    Message msg = Message.obtain(null, OBD2Service.MSG_CANCEL);
                     msg.replyTo = messenger;
                     serviceMessenger.send(msg);
                 } catch (RemoteException e) {}
@@ -239,7 +238,7 @@ public class BootActivity extends Activity {
         if (cloud != null && this.isBound) {
         	try {
         		try {
-                    Message msg = Message.obtain(null, CloudService.MSG_UNREGISTER_AS_STATUS_LISTENER);
+                    Message msg = Message.obtain(null, OBD2Service.MSG_UNREGISTER_AS_STATUS_LISTENER);
                     msg.replyTo = messenger;
                     serviceMessenger.send(msg);
                 } catch (RemoteException e) {
@@ -261,12 +260,12 @@ public class BootActivity extends Activity {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
-            case CloudService.MSG_PUB_STATUS:
+            case OBD2Service.MSG_PUB_STATUS:
                 String str1 = msg.getData().getString("str1");
                 ProgramState stat = ProgramState.valueOf(str1);
                 changeButtonAppearance(stat);
                 break;
-            case CloudService.MSG_PUB_STATUS_TXT:
+            case OBD2Service.MSG_PUB_STATUS_TXT:
                 String txt = msg.getData().getString("str1");
                 ((TextView)(findViewById(R.id.textView3))).setText(txt);
             default:

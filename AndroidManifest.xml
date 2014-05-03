@@ -43,8 +43,8 @@
             </intent-filter>
         </activity>
         <service 
-            android:name="fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService"
-            android:process="fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService"
+            android:name="fi.aalto.cse.msp14.carplatforms.obd2_client.OBD2Service"
+            android:process="fi.aalto.cse.msp14.carplatforms.serverconnection.OBD2Service"
             >
         </service>
     </application>

@@ -1,11 +1,9 @@
-package fi.aalto.cse.msp14.carplatforms.serverconnection;
+package fi.aalto.cse.msp14.carplatforms.obd2_client;
 
 import java.util.ArrayList;
 
-import fi.aalto.cse.msp14.carplatforms.obd2_client.CloudValueProvider;
-import fi.aalto.cse.msp14.carplatforms.obd2_client.ProgramState;
 import fi.aalto.cse.msp14.carplatforms.obd2_client.R;
-import fi.aalto.cse.msp14.carplatforms.obd2_client.Scheduler;
+import fi.aalto.cse.msp14.carplatforms.serverconnection.CloudConnection;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.Service;
@@ -21,13 +19,12 @@ import android.os.PowerManager;
 import android.os.Process;
 import android.os.RemoteException;
 import android.telephony.TelephonyManager;
-import android.util.Log;
 
 /**
  * 
  * @author Maria
  */
-public class CloudService extends Service {
+public class OBD2Service extends Service {
 	// These are identifiers for messages.
 	public static final int MSG_START = 0;
 	public static final int MSG_STOP = 1;
@@ -213,8 +210,8 @@ public class CloudService extends Service {
 	    String tag = "obd2ServerNotifyer";
 	    mNotifyManager.cancel(tag, id);
 		stop();
-		CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, getText(R.string.state_connection_closed).toString(), null);
-		CloudService.this.broadcast(CloudService.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
+		OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS_TXT, getText(R.string.state_connection_closed).toString(), null);
+		OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
 	    started = false;
 	}
 
@@ -264,13 +261,13 @@ public class CloudService extends Service {
 	private class BootStrapperTask extends AsyncTask<Void, String, Boolean /* TODO into something more informative */> {
 		
 		private AsyncTask currentTask;
-		private CloudService parent; // Not just activity, because some things have to be passed to this one.
+		private OBD2Service parent; // Not just activity, because some things have to be passed to this one.
 		
 		/**
 		 * 
 		 * @param activity
 		 */
-		public BootStrapperTask(CloudService activity) {
+		public BootStrapperTask(OBD2Service activity) {
 			assert(activity != null);
 			parent = activity;
 		}
@@ -376,17 +373,17 @@ public class CloudService extends Service {
 			//System.out.println("Progress update");
 			if (text.length < 1) return;
 			String newText = text[0];
-			CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, newText, null);
+			OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS_TXT, newText, null);
 		}
 
 		@Override
 		public void onPostExecute(Boolean v) {
 			if (v) { // Successful!
-				CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, parent.getText(R.string.state_connection_established).toString(), null);
-				CloudService.this.broadcast(CloudService.MSG_PUB_STATUS, ProgramState.STARTED.name(), null);
+				OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS_TXT, parent.getText(R.string.state_connection_established).toString(), null);
+				OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS, ProgramState.STARTED.name(), null);
 			} else { // Not so successful
-				CloudService.this.broadcast(CloudService.MSG_PUB_STATUS_TXT, parent.getText(R.string.state_connection_failed).toString(), null);
-				CloudService.this.broadcast(CloudService.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
+				OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS_TXT, parent.getText(R.string.state_connection_failed).toString(), null);
+				OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
 			}
 		}
 		
@@ -430,9 +427,9 @@ public class CloudService extends Service {
 			}
 			@Override
 			protected void onPostExecute(Void v) {
-				CloudService.this.broadcast(MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
-				CloudService.this.broadcast(MSG_PUB_STATUS_TXT, CloudService.this.getText(R.string.state_connection_cancelled).toString(), null);
-				CloudService.this.stopSelf();
+				OBD2Service.this.broadcast(MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
+				OBD2Service.this.broadcast(MSG_PUB_STATUS_TXT, OBD2Service.this.getText(R.string.state_connection_cancelled).toString(), null);
+				OBD2Service.this.stopSelf();
 			}
 	    }
 	}

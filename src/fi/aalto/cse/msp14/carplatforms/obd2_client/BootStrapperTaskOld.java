@@ -1,7 +1,6 @@
 package fi.aalto.cse.msp14.carplatforms.obd2_client;
 
 import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
-import fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService;
 import android.content.Context;
 import android.content.Intent;
 import android.os.AsyncTask;
@@ -11,20 +10,20 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 /**
- * 
+ * TODO Remove
  * @author Maria
  *
  */
 public class BootStrapperTaskOld extends AsyncTask<Void, String, Boolean /* TODO into something more informative */> {
 	
 	private AsyncTask currentTask;
-	private CloudService parent; // Not just activity, because some things have to be passed to this one.
+	private OBD2Service parent; // Not just activity, because some things have to be passed to this one.
 	
 	/**
 	 * 
 	 * @param activity
 	 */
-	public BootStrapperTaskOld(CloudService activity) {
+	public BootStrapperTaskOld(OBD2Service activity) {
 		assert(activity != null);
 		parent = activity;
 	}

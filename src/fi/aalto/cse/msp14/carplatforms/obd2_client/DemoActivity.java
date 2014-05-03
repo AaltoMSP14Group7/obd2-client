@@ -6,7 +6,6 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.*;
 import fi.aalto.cse.msp14.carplatforms.obdlink.OBDLinkManager;
-import fi.aalto.cse.msp14.carplatforms.serverconnection.CloudService;
 
 public class DemoActivity extends Activity {
 	
@@ -38,7 +37,7 @@ public class DemoActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_demo);
 
-        cloud = new Intent(this, CloudService.class);
+        cloud = new Intent(this, OBD2Service.class);
         startService(cloud);
         
         (findViewById(R.id.progressConnection)).setVisibility(ProgressBar.INVISIBLE);
