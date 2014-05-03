@@ -2,6 +2,8 @@ package fi.aalto.cse.msp14.carplatforms.obd2_client;
 
 import java.util.ArrayList;
 
+import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
+import fi.aalto.cse.msp14.carplatforms.location.DeviceLocationDataSource;
 import fi.aalto.cse.msp14.carplatforms.obd2_client.R;
 import fi.aalto.cse.msp14.carplatforms.serverconnection.CloudConnection;
 import android.app.Notification;
@@ -38,8 +40,12 @@ public class OBD2Service extends Service {
 
 	private static final String LOCK_TAG = "obd2datatocloud";
 	
+	private static final int TAG_ID = 1;
+	private static final String TAG_TAG = "obd2ServerNotifyer";
+	
 	private PowerManager.WakeLock wakelock;
-	private static long t = System.nanoTime();
+	
+	private String deviceID;
 	
 	/*
 	 * Different components
@@ -47,6 +53,7 @@ public class OBD2Service extends Service {
 	private CloudConnection cloud;
 	private Scheduler scheduler;
 	private BootStrapperTask task;
+	private DeviceLocationDataSource locationData;
 
 	private String prevState = null;
 	private String prevTxt = null;
@@ -75,7 +82,7 @@ public class OBD2Service extends Service {
         public void handleMessage(Message msg) {
             switch (msg.what) {
             case MSG_GET_XML:
-            	// TODO Send response to msg.replyTo
+            	// Not needed?
                 break;
             case MSG_MSG:
             	// TODO handle message
@@ -173,9 +180,7 @@ public class OBD2Service extends Service {
 			    .setSmallIcon(android.R.drawable.ic_notification_overlay)
 			    .setOngoing(true);
 		    Notification noti = nBuild.build();
-		    int id = 1;
-		    String tag = "obd2ServerNotifyer";
-		    mNotifyManager.notify(tag, id, noti);
+		    mNotifyManager.notify(TAG_TAG, TAG_ID, noti);
 		    // Notification created!
 
 			requestWakeLock();
@@ -204,11 +209,8 @@ public class OBD2Service extends Service {
 	@Override
 	public void onDestroy() {
 		super.onDestroy();
-		NotificationManager mNotifyManager =
-		        (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-		int id = 1;
-	    String tag = "obd2ServerNotifyer";
-	    mNotifyManager.cancel(tag, id);
+		NotificationManager mNotifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+	    mNotifyManager.cancel(TAG_TAG, TAG_ID);
 		stop();
 		OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS_TXT, getText(R.string.state_connection_closed).toString(), null);
 		OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
@@ -275,7 +277,7 @@ public class OBD2Service extends Service {
 		@Override
 		protected Boolean doInBackground(Void... params) {
 			// TODO bluetooth
-	        publishProgress("Connecting bluetooth");
+	        publishProgress(parent.getText(R.string.progress_bluetooth).toString());
 			connectBluetooth();
 			if (this.isCancelled()) return false;
 			
@@ -283,7 +285,7 @@ public class OBD2Service extends Service {
 			scheduler = new Scheduler();
 	        scheduler.start();
 
-	        String deviceID = createID();
+	        deviceID = createID();
 			if (this.isCancelled()) return false;
 	        
 	        // TODO Now, fetch from cloud that what to get
@@ -304,6 +306,8 @@ public class OBD2Service extends Service {
 		 * @param scheduler
 		 */
 		private void createCloudValueProviders(Scheduler scheduler) {
+			locationData = new DeviceLocationDataSource(parent.getApplicationContext(), cloud, 10000, 10000);
+			
 	        CloudValueProvider cvp1 = new CloudValueProvider() {
 				@Override
 				public long getQueryTickInterval() {
@@ -334,17 +338,19 @@ public class OBD2Service extends Service {
 				}
 				@Override
 				public void tickQuery() {
-					System.out.println("TICK QUERY 1");
+					System.out.println("TICK QUERY 2");
 				}
 				@Override
 				public void tickOutput() {
-					System.out.println("TICK OUT 1");
+					System.out.println("TICK OUT 2");
 				}
 	        };
 
 	        if (this.isCancelled()) return;
 	        try {
-	            scheduler.registerFilter("Test1", cvp1);
+	        	scheduler.registerFilter(locationData.getClass().getName(), locationData);
+
+	        	scheduler.registerFilter("Test1", cvp1);
 	            scheduler.registerFilter("Test2", cvp2);
 	        } catch (Exception e) {}
 	        // TODO Remove those ^^^
@@ -354,7 +360,11 @@ public class OBD2Service extends Service {
 		 * TODO should return something and actually do something.
 		 */
 		private void fetchXMLSpecs() {
-			System.out.println("Get xml");
+			try {
+				cloud.getXML();
+			} catch (IllegalThreadUseException e) {
+				e.printStackTrace();
+			}
 		}
 
 		/**
@@ -363,7 +373,7 @@ public class OBD2Service extends Service {
 		 */
 		private boolean connectBluetooth() {
 			try {
-				Thread.sleep(20000); // TODO bluetooth connection waiting.
+				Thread.sleep(5000); // TODO bluetooth connection waiting.
 			} catch(Exception e) {}
 			return true;
 		}
@@ -379,6 +389,10 @@ public class OBD2Service extends Service {
 		@Override
 		public void onPostExecute(Boolean v) {
 			if (v) { // Successful!
+				try {
+					locationData.registerForLocationUpdates(parent.getApplicationContext());
+				} catch (IllegalThreadUseException e) {/* Should be no problem */}
+				
 				OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS_TXT, parent.getText(R.string.state_connection_established).toString(), null);
 				OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS, ProgramState.STARTED.name(), null);
 			} else { // Not so successful

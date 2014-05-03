@@ -23,5 +23,4 @@ public class JSONSaveDataMessage implements SaveDataMessage {
 	public String toMessage() {
 		return json.toString();
 	}
-
 }

@@ -7,7 +7,9 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.os.Looper;
 import android.util.Log;
+import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
 import fi.aalto.cse.msp14.carplatforms.obd2_client.CloudValueProvider;
 import fi.aalto.cse.msp14.carplatforms.serverconnection.JSONSaveDataMessage;
 import fi.aalto.cse.msp14.carplatforms.serverconnection.SaveDataMessage;
@@ -30,12 +32,22 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 			throw new IllegalArgumentException("The query and output intervals need to be at least 1000 ms");
 		}
 		
-		LocationManager lm = (LocationManager) applicationContext.getSystemService(Context.LOCATION_SERVICE);
-		lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, new LocationUpdater());
-		
 		this.server = server;
 		this.queryTickInterval = queryTickInterval;
 		this.outputTickInterval = outputTickInterval;
+	}
+
+	/**
+	 * 
+	 * 
+	 * @throws IllegalThreadUseException 
+	 */
+	public void registerForLocationUpdates(Context applicationContext) throws IllegalThreadUseException {
+		if (Looper.myLooper() != Looper.getMainLooper()) {
+			throw new IllegalThreadUseException("This method can only be called from UI thread!");
+		}
+		LocationManager lm = (LocationManager) applicationContext.getSystemService(Context.LOCATION_SERVICE);
+		lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, new LocationUpdater());
 	}
 	
 	@Override
@@ -45,10 +57,12 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 
 	@Override
 	public void tickOutput() {
-		double[] coords = { location.getLatitude(), location.getLongitude() };
-		long timestamp = new Date().getTime() / 1000;
-		SaveDataMessage message = new JSONSaveDataMessage("TODO deviceId", "TODO VIN", timestamp, "location", coords);
-		server.sendMessage(message);
+		if (location != null) {
+			double[] coords = { location.getLatitude(), location.getLongitude() };
+			long timestamp = new Date().getTime() / 1000;
+			SaveDataMessage message = new JSONSaveDataMessage("TODO deviceId", "TODO VIN", timestamp, "location", coords);
+			server.sendMessage(message);
+		}
 	}
 	
 	@Override

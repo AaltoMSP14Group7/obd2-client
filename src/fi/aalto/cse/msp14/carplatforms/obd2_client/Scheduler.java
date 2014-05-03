@@ -14,6 +14,7 @@ import fi.aalto.cse.msp14.carplatforms.exceptions.ValueProviderAlreadyExistsExce
 public class Scheduler {
 	
 	private final HashMap<String, ValueProviderTask> filters;
+	private final HashMap<String, ValueOutputTask> outputs;
 	private Timer timer;
 	private Timer timerOutput;
 	private boolean running;
@@ -23,6 +24,7 @@ public class Scheduler {
 	 */
 	public Scheduler() {
 		filters = new HashMap<String, ValueProviderTask>();
+		outputs = new HashMap<String, ValueOutputTask>();
 		running = false;
 	}
 	
@@ -41,8 +43,13 @@ public class Scheduler {
 		synchronized(filters) {
 			filters.put(name, task);
 		}
+		ValueOutputTask output = new ValueOutputTask(valueProvider);
+		synchronized(outputs) {
+			outputs.put(name, output);
+		}
 		if (running) {
 			timer.schedule(task, valueProvider.getQueryTickInterval(), valueProvider.getQueryTickInterval());
+			timerOutput.schedule(output, valueProvider.getOutputTickInterval(), valueProvider.getOutputTickInterval());
 		}
 	}
 
@@ -53,11 +60,15 @@ public class Scheduler {
 	public void unregisterFilter(String name) {
 		// TODO?
 		TimerTask task;
+		TimerTask output;
 		synchronized(filters) {
 			task = filters.remove(name);
 		}
-		if (task == null) return;
-		task.cancel();
+		synchronized(outputs) {
+			output = outputs.remove(name);
+		}
+		if (task != null) task.cancel();
+		if (output != null) output.cancel();
 	}
 	
 	/**
@@ -69,6 +80,15 @@ public class Scheduler {
 				TimerTask task;
 				for (String key : filters.keySet()) {
 					task = filters.remove(key);
+					if (running) {
+						task.cancel();
+					}
+				}
+			}
+			synchronized(outputs) {
+				TimerTask task;
+				for (String key : outputs.keySet()) {
+					task = outputs.remove(key);
 					if (running) {
 						task.cancel();
 					}
@@ -86,6 +106,7 @@ public class Scheduler {
 		if (running) {
 			running = false;
 			timer.cancel();
+			timerOutput.cancel();
 		}
 	}
 	
@@ -97,11 +118,20 @@ public class Scheduler {
 		if (!running) {
 			running = true;
 			timer = new Timer();
+			timerOutput = new Timer();
+			
 			synchronized(filters) {
 				ValueProviderTask task;
 				for (String key : filters.keySet()) {
 					task = filters.get(key);
 					timer.schedule(task, task.valueProvider.getQueryTickInterval(), task.valueProvider.getQueryTickInterval());
+				}
+			}
+			synchronized(outputs) {
+				ValueOutputTask task;
+				for (String key : outputs.keySet()) {
+					task = outputs.get(key);
+					timerOutput.schedule(task, task.valueProvider.getOutputTickInterval(), task.valueProvider.getOutputTickInterval());
 				}
 			}
 		}
@@ -129,6 +159,36 @@ public class Scheduler {
 		@Override
 		public void run() {
 			this.valueProvider.tickQuery();
+		}
+		
+		/**
+		 * 
+		 * @return
+		 */
+		CloudValueProvider getValueProvider() {
+			return this.valueProvider;
+		}
+	}
+	/**
+	 * 
+	 * @author Maria
+	 *
+	 */
+	private class ValueOutputTask extends TimerTask {
+
+		private CloudValueProvider valueProvider;
+		
+		/**
+		 * Constructor.
+		 * @param provider
+		 */
+		ValueOutputTask(CloudValueProvider provider) {
+			this.valueProvider = provider;
+		}
+		
+		@Override
+		public void run() {
+			this.valueProvider.tickOutput();
 		}
 		
 		/**

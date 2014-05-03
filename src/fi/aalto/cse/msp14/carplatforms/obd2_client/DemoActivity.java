@@ -37,8 +37,8 @@ public class DemoActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_demo);
 
-        cloud = new Intent(this, OBD2Service.class);
-        startService(cloud);
+        //cloud = new Intent(this, OBD2Service.class);
+        //startService(cloud);
         
         (findViewById(R.id.progressConnection)).setVisibility(ProgressBar.INVISIBLE);
         (findViewById(R.id.progressQuery)).setVisibility(ProgressBar.INVISIBLE);

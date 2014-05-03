@@ -16,4 +16,7 @@
     <string name="state_connection_cancelled">Connection attempt cancelled</string>
     <string name="state_disconnecting">Disconnecting, please wait</string>
     <string name="state_cancelling">Cancelling, please wait</string>
+    
+    <string name="progress_bluetooth">Waiting for bluetooth connection</string>
+    
 </resources>
