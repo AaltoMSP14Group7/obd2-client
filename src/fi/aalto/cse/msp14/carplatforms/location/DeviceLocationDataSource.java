@@ -7,6 +7,8 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.util.Log;
 import fi.aalto.cse.msp14.carplatforms.obd2_client.CloudValueProvider;
+import fi.aalto.cse.msp14.carplatforms.serverconnection.JSONSaveDataMessage;
+import fi.aalto.cse.msp14.carplatforms.serverconnection.SaveDataMessage;
 import fi.aalto.cse.msp14.carplatforms.serverconnection.ServerConnectionInterface;
 
 public class DeviceLocationDataSource implements CloudValueProvider {
@@ -41,7 +43,9 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 
 	@Override
 	public void tickOutput() {
-		// TODO Implement
+		double[] coords = { 12.121212, -21.212121 };
+		SaveDataMessage message = new JSONSaveDataMessage("TODO deviceId", "TODO VIN", 666666666, "location", coords);
+		server.sendMessage(message);
 	}
 	
 	@Override
