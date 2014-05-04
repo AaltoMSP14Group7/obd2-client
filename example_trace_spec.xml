@@ -18,13 +18,13 @@
 				</toFloat>
 			</div>
 		</decode>
-	</obdDataSoruce>
+	</obdDataSource>
 	
 	<obdDataSource name="vehicle_speed" pid="13" nBytes="1" min="0" max="255">
 		<decode>
 			<inputByte index="0" signed="false" />
 		</decode>
-	</obdDataSoruce>
+	</obdDataSource>
 	
 	<obdDataSource name="engine_load" pid="4" nBytes="1" min="0" max="100">
 		<decode>
@@ -38,7 +38,10 @@
 				<float value="255" />
 			</div>
 		</decode>
-	</obdDataSoruce>
+	</obdDataSource>
+	
+	<!-- Write location once per 2000ms-->
+	<deviceLocationOutput updateRate="2000" />
 	
 	<!-- Sample RPM once per 100ms, output median, max and min once per 5000ms-->
 	<filter updateRate="100" source="engine_rpm">
