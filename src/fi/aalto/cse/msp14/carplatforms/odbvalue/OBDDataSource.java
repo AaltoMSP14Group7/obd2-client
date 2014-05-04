@@ -6,6 +6,8 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import android.util.Log;
+
 import fi.aalto.cse.msp14.carplatforms.obdlink.OBDLinkManager;
 import fi.aalto.cse.msp14.carplatforms.obdlink.OBDLinkManager.OBD2DataQuery;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.decode.IValueEvaluator;
@@ -46,10 +48,12 @@ public class OBDDataSource {
 				else
 					decodedValue = (float)m_decoder.evaluateInteger(context);
 			} catch (DecodeFailure ex) {
+				Log.d("OBDDataSource", "Decode failure; " + ex.getMessage());
 				emitQueryFailure();
 				return;
 			}
 			
+			Log.d("OBDDataSource", "Decode succeeded; value = " + decodedValue);
 			emitQueryResult(decodedValue);
 		}
 
