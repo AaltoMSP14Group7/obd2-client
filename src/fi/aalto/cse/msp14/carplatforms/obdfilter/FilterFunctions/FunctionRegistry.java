@@ -1,5 +1,6 @@
 package fi.aalto.cse.msp14.carplatforms.obdfilter.FilterFunctions;
 
+import java.util.HashMap;
 import java.util.Map;
 
 
@@ -7,7 +8,8 @@ public class FunctionRegistry {
 	
 	private static Map<String,FilterFunction> functionRegistry;
 	
-	public FunctionRegistry() {
+	static {
+		functionRegistry = new HashMap<String, FilterFunction>();
 		functionRegistry.put("minimum", new MinValueFilterFunction());
 		functionRegistry.put("maximum", new MaxValueFilterFunction());
 		functionRegistry.put("current", new CurrentValueFilterFunction());
@@ -15,8 +17,7 @@ public class FunctionRegistry {
 		functionRegistry.put("variance", new VarianceValueFilterFunction());
 	}
 
-	public static FilterFunction getFunctionFromRegistry(String functionName) {
-		
+	public static synchronized FilterFunction getFunctionFromRegistry(String functionName) {
 		if (functionRegistry.containsKey(functionName)) {
 			try {
 				return functionRegistry.get(functionName).getClass().newInstance();
