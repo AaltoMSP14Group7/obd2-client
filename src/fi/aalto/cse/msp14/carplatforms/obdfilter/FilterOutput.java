@@ -1,26 +1,22 @@
 package fi.aalto.cse.msp14.carplatforms.obdfilter;
 
-import org.w3c.dom.Element;
-
+import fi.aalto.cse.msp14.carplatforms.exceptions.NoValueException;
 import fi.aalto.cse.msp14.carplatforms.obdfilter.FilterFunctions.FilterFunction;
 import fi.aalto.cse.msp14.carplatforms.obdfilter.FilterFunctions.FunctionRegistry;
-import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDDataSource;
 
 
 public class FilterOutput {
 
 	private String name;
-	private float outputRate;
 	private FilterFunction function;
 
 
-	public FilterOutput(OBDDataSource source, Element e) {
-		this.name = e.getAttribute("name");
-		this.outputRate = Float.parseFloat(e.getAttribute("outputRate"));
-		this.function = FunctionRegistry.getFunctionFromRegistry(e.getAttribute("filter"));
+	public FilterOutput(String name, String functionName) {
+		this.name = name;
+		this.function = FunctionRegistry.getFunctionFromRegistry(functionName);
 	}
 
-	public FilterAggregate flushResult() throws Exception {
+	public FilterAggregate flushResult() throws NoValueException {
 		return function.flushResult();
 	}
 
@@ -38,14 +34,6 @@ public class FilterOutput {
 
 	public void setName(String name) {
 		this.name = name;
-	}
-
-	public float getOutputRate() {
-		return outputRate;
-	}
-
-	public void setOutputRate(float outputRate) {
-		this.outputRate = outputRate;
 	}
 	
 

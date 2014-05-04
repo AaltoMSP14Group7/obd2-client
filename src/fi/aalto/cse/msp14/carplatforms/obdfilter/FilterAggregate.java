@@ -19,7 +19,7 @@ public class FilterAggregate {
 		this.value = value;
 	}
 
-	public float getTimestamp() {
+	public long getTimestamp() {
 		return timestamp;
 	}
 
