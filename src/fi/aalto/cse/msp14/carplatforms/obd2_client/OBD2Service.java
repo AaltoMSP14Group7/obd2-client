@@ -1,12 +1,19 @@
 package fi.aalto.cse.msp14.carplatforms.obd2_client;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
 import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
 import fi.aalto.cse.msp14.carplatforms.location.DeviceLocationDataSource;
 import fi.aalto.cse.msp14.carplatforms.obd2_client.R;
+import fi.aalto.cse.msp14.carplatforms.obdfilter.Filter;
+import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDDataSource;
 import fi.aalto.cse.msp14.carplatforms.serverconnection.CloudConnection;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -59,14 +66,14 @@ public class OBD2Service extends Service {
 	private DeviceLocationDataSource locationData;
 	private TempBluetoothConnectionManager btConManager;
 
-	private String prevState = null;
-	private String prevTxt = null;
+	static private String prevState = null;
+	static private String prevTxt = null;
 
 	private static boolean started = false;
 
 	// Messaging related stuff
-	final Messenger messenger = new Messenger(new IncomingHandler());
-	ArrayList<Messenger> statusListeners = new ArrayList<Messenger>(); 
+	private Messenger messenger;
+	static ArrayList<Messenger> statusListeners = new ArrayList<Messenger>(); 
 		// All status listeners
 
 	/**
@@ -82,8 +89,13 @@ public class OBD2Service extends Service {
 	 * @author Maria
 	 * 
 	 */
-	class IncomingHandler extends Handler { // Handler of incoming messages from
-											// clients.
+	static class IncomingHandler extends Handler { // Handler of incoming messages from clients.
+		private final WeakReference<OBD2Service> mService; 
+
+		IncomingHandler(OBD2Service service) {
+			mService = new WeakReference<OBD2Service>(service);
+		}
+		
 		@Override
 		public void handleMessage(Message msg) {
 			switch (msg.what) {
@@ -126,7 +138,10 @@ public class OBD2Service extends Service {
 			case MSG_START: // Not used
 				break;
 			case MSG_CANCEL: // Not used
-				cancel();
+				if (this.mService != null && this.mService.get() != null) {
+					this.mService.get().cancel();
+				}
+				
 				break;
 			default:
 				super.handleMessage(msg);
@@ -177,7 +192,8 @@ public class OBD2Service extends Service {
 	@Override
 	public void onCreate() {
 		task = null;
-
+		this.messenger = new Messenger(new IncomingHandler(this));
+		
 		// Create notification which tells that this service is running.
 		NotificationManager mNotifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		Notification.Builder nBuild = new Notification.Builder(this)
@@ -313,7 +329,7 @@ public class OBD2Service extends Service {
 			publishProgress(parent.getText(R.string.progress_bluetooth)
 					.toString());
 			ret = connectBluetooth();
-//			if (this.isCancelled() || !ret) {
+//			if (this.isCancelled() || !ret) { // TODO Uncomment these
 //				if (!ret) error = parent.getText(R.string.progress_err_no_bluetooth).toString();
 //				else error = parent.getText(R.string.progress_err_cancelled).toString();
 //				return false;
@@ -331,8 +347,7 @@ public class OBD2Service extends Service {
 				return false;
 			}
 
-			// TODO Now, fetch from cloud that what to get
-			NodeList list = fetchXMLSpecs();
+			Document list = fetchXMLSpecs();
 			if (this.isCancelled()){
 				error = parent.getText(R.string.progress_err_cancelled).toString();
 				return false;
@@ -340,11 +355,36 @@ public class OBD2Service extends Service {
 				error = parent.getText(R.string.progress_err_no_filters).toString();
 				return false;
 			}
+			NodeList locationOutput = list.getElementsByTagName("deviceLocationOutput");
+			if (locationOutput.getLength() > 0) {
+				int updaterate = -1;
+				for (int i = 0; i < locationOutput.getLength(); i++) {
+					if (locationOutput.item(i).hasAttributes() 
+							&& locationOutput.item(i).getAttributes().getNamedItem("updateRate") != null) {
+						String updaterateStr = locationOutput.item(i).getAttributes().getNamedItem("updateRate").getNodeValue();
+						updaterate = Integer.parseInt(updaterateStr);
+						break;
+					}
+				}
+				locationData = new DeviceLocationDataSource(
+						parent.getApplicationContext(), cloud, Integer.MAX_VALUE, updaterate);
+				if (this.isCancelled()) {
+					error = parent.getText(R.string.progress_err_cancelled).toString();
+					return false;
+				}
+				try {
+					scheduler.registerOutput(locationData.getClass().getName(),locationData);
+				} catch (Exception e) {/* Yeah yeah... */}
+			}
 			
-			// TODO Create OBD sources
-			publishProgress(parent.getText(R.string.progress_starting).toString());
-			createCloudValueProviders(scheduler); // TODO Create CloudValueProviders.
+			Map<String, OBDDataSource> sources = parseOBDDataSources(list);
+			// Do something with them, or not.
 
+			publishProgress(parent.getText(R.string.progress_starting).toString());
+
+			Map<String, Filter> filters = parseFilters(list, sources);
+			registerFilters(filters);
+			
 			if (this.isCancelled()) {
 				error = parent.getText(R.string.progress_err_cancelled).toString();
 				return false;
@@ -353,32 +393,86 @@ public class OBD2Service extends Service {
 			publishProgress("Connection done!");
 			return true;
 		}
+		
+		/**
+		 * 
+		 * @param filters
+		 */
+		private void registerFilters(Map<String, Filter> filters) {
+			for (String key : filters.keySet()) {
+				try {
+					scheduler.registerFilter(key, filters.get(key));
+					scheduler.registerOutput(key, filters.get(key));
+				} catch (Exception e) {
+				}
+			}
+		}
 
 		/**
-		 * TODO real things
 		 * 
-		 * @param scheduler
+		 * @param list
+		 * @param sources
+		 * @return
 		 */
-		private void createCloudValueProviders(Scheduler scheduler) {
-			locationData = new DeviceLocationDataSource(
-					parent.getApplicationContext(), cloud, 10000, 10000);
+		private Map<String, Filter> parseFilters(Document doc, Map<String, OBDDataSource> sources) {
+			HashMap<String, Filter> filters = new HashMap<String, Filter>();
+			NodeList ss = doc.getElementsByTagName("filter");
+			Filter newFilter;
+			Element e;
+			String name;
 
-			if (this.isCancelled())
-				return;
-			try {
-				scheduler.registerFilter(locationData.getClass().getName(),locationData);
-				scheduler.registerOutput(locationData.getClass().getName(),locationData);
-			} catch (Exception e) {
+			for (int i = 0; i < ss.getLength(); i++) {
+				e = (Element) ss.item(i);
+				name = e.getAttribute("source");
+				try {
+					System.out.println("OBDFILTER  " + i + ": " + name + " " + e.getElementsByTagName("output").getLength()
+							+ " ja " + e.getAttributes().getNamedItem("outputRate").getNodeValue());
+					newFilter = new Filter(e, cloud, sources);
+					filters.put(name, newFilter);
+					System.out.println("ADDED filter " + e + " " + newFilter);
+				} catch (Exception ex) {
+					// Parse or creation exception!
+					ex.printStackTrace();
+				}
 			}
+			return filters;
 		}
 
 		/**
 		 * 
 		 * @return
 		 */
-		private NodeList fetchXMLSpecs() {
+		private Map<String, OBDDataSource> parseOBDDataSources(Document doc) {
+			HashMap<String, OBDDataSource> sources = new HashMap<String, OBDDataSource>();
+			NodeList ss = doc.getElementsByTagName("obdDataSource");
+			System.out.println("OBDSOURCEJA LÖYTYI " + ss.getLength());
+			OBDDataSource newSource; 
+			Element e;
+			String name;
+			for (int i = 0; i < ss.getLength(); i++) {
+				e = (Element) ss.item(i);
+				name = e.getAttribute("name");
+				try {
+					System.out.println("OBDSOURCE  " + i + ": " + name + " " + e.getElementsByTagName("decode").getLength());
+					
+					newSource = new OBDDataSource(e, btConManager.getThisOBDLinkManager());
+					sources.put(name, newSource);
+					System.out.println("ADDED source " + e + " " + newSource);
+				} catch (Exception ex) {
+					// Parse exception!
+					ex.printStackTrace();
+				}
+			}
+			return sources;
+		}
+
+		/**
+		 * 
+		 * @return
+		 */
+		private Document fetchXMLSpecs() {
 			try {
-				NodeList filterNodelist = cloud.getFilters();
+				Document filterNodelist = cloud.getFilters();
 				return filterNodelist;
 			} catch (IllegalThreadUseException e) {
 				e.printStackTrace();

@@ -75,7 +75,6 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 
 	@Override
 	public void tickOutput() {
-		System.out.println("LOCATION OUTPUT " + location);
 		if (location != null) {
 			double[] coords = { location.getLatitude(), location.getLongitude() };
 			long timestamp = new Date().getTime() / 1000;

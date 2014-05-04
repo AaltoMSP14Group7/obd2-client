@@ -3,6 +3,11 @@ package fi.aalto.cse.msp14.carplatforms.obd2_client;
 import android.content.Context;
 import fi.aalto.cse.msp14.carplatforms.obdlink.OBDLinkManager;
 
+
+/**
+ * 
+ * @author Maria
+ */
 public class TempBluetoothConnectionManager {
 	private OBDLinkManager obdLink;
 	

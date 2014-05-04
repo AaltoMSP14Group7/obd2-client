@@ -29,11 +29,13 @@ import android.net.NetworkInfo;
 import android.os.Looper;
 
 public class CloudConnection implements Runnable, ServerConnectionInterface {
-	private static final String URI = "http://82.130.19.148:8090/";
+//	private static final String URI = "http://82.130.19.148:8090/";
 //	private static final String URI = "http://10.0.10.11:81/";
-	private static final String POST = "test.php";
-	private static final String XML = "xmlspecs.xml";
-	private static final String URI_SERVER = "http://ec2-54-186-67-231.us-west-2.compute.amazonaws.com:9000/addDataPoint";
+//	private static final String POST = "test.php";
+//	private static final String XML = "xmlspecs.xml";
+	private static final String URI = "http://ec2-54-186-67-231.us-west-2.compute.amazonaws.com:9000/";
+	private static final String POST = "addDataPoint";
+	private static final String XML = "xmlspecs";
 
 	private boolean keepalive;
 	private LinkedBlockingQueue<SaveDataMessage> messages;
@@ -121,7 +123,7 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 	 * Otherwise it might block if network is slow or not available.
 	 * @throws IllegalThreadUseException If this method is called for any reason from main thread.
 	 */
-	public NodeList getFilters() throws IllegalThreadUseException {
+	public Document getFilters() throws IllegalThreadUseException {
 		if (Looper.myLooper() == Looper.getMainLooper()) {
 			throw new IllegalThreadUseException("This method must NOT be called from UI thread!");
 		}
@@ -137,11 +139,14 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 					DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 					DocumentBuilder builder = factory.newDocumentBuilder();
 					Document doc = builder.parse(response.getEntity().getContent());
+					
+					
 					NodeList list = doc.getElementsByTagName("filter");
 					for (int i = 0; i < list.getLength(); i++) {
 						System.out.println(list.item(i).getNodeName() + ": " + list.item(i).getAttributes().getNamedItem("source").getNodeValue());
 					}
-					return list;
+
+					return doc;
 					// Now should TODO parsing it all, I guess
 				} catch (ParserConfigurationException e) {
 					e.printStackTrace();
