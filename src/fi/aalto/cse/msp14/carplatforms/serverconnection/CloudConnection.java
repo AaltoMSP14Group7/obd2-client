@@ -29,8 +29,8 @@ import android.net.NetworkInfo;
 import android.os.Looper;
 
 public class CloudConnection implements Runnable, ServerConnectionInterface {
-//	private static final String URI = "http://82.130.19.148:8090/test.php";
-	private static final String URI = "http://10.0.10.11:81/";
+	private static final String URI = "http://82.130.19.148:8090/";
+//	private static final String URI = "http://10.0.10.11:81/";
 	private static final String POST = "test.php";
 	private static final String XML = "xmlspecs.xml";
 	private static final String URI_SERVER = "http://ec2-54-186-67-231.us-west-2.compute.amazonaws.com:9000/addDataPoint";
@@ -196,6 +196,7 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 	
 	@Override
 	public synchronized void sendMessage(SaveDataMessage message) {
+		System.out.println("SENDING MESSAGE " + message.toMessage());
 		this.messages.offer(message);
 		notify();
 	}

@@ -20,6 +20,8 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 	private long queryTickInterval;
 	private long outputTickInterval;
 	private Location location;
+	private LocationListener locationListener;
+	private LocationManager lm;
 	
 	public DeviceLocationDataSource(Context applicationContext, ServerConnectionInterface server, long queryTickInterval, long outputTickInterval) {
 		if(applicationContext == null) {
@@ -46,8 +48,24 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 		if (Looper.myLooper() != Looper.getMainLooper()) {
 			throw new IllegalThreadUseException("This method can only be called from UI thread!");
 		}
-		LocationManager lm = (LocationManager) applicationContext.getSystemService(Context.LOCATION_SERVICE);
-		lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, new LocationUpdater());
+		lm = (LocationManager) applicationContext.getSystemService(Context.LOCATION_SERVICE);
+		locationListener = new LocationUpdater();
+		lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener);
+	}
+	
+	/**
+	 * Basically, stop this data source.
+	 */
+	public void unregisterLocationUpdates() {
+		if (locationListener != null && lm != null) {
+			try {
+				lm.removeUpdates(locationListener);
+				lm = null;
+				locationListener = null;
+			} catch(Exception e) {
+				e.printStackTrace();
+			}		
+		}
 	}
 
 	@Override
@@ -57,6 +75,7 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 
 	@Override
 	public void tickOutput() {
+		System.out.println("LOCATION OUTPUT " + location);
 		if (location != null) {
 			double[] coords = { location.getLatitude(), location.getLongitude() };
 			long timestamp = new Date().getTime() / 1000;

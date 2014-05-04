@@ -91,7 +91,7 @@ public class OBD2Service extends Service {
 				// Not needed?
 				break;
 			case MSG_MSG:
-				// TODO handle message
+				// Not needed?
 				break;
 			case MSG_REGISTER_AS_STATUS_LISTENER:
 				statusListeners.add(msg.replyTo);
@@ -258,6 +258,13 @@ public class OBD2Service extends Service {
 				e.printStackTrace();
 			}
 		}
+		if (this.locationData != null) {
+			try {
+				this.locationData.unregisterLocationUpdates();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 	}
 
 	/**
@@ -306,11 +313,11 @@ public class OBD2Service extends Service {
 			publishProgress(parent.getText(R.string.progress_bluetooth)
 					.toString());
 			ret = connectBluetooth();
-			if (this.isCancelled() || !ret) {
-				if (!ret) error = parent.getText(R.string.progress_err_no_bluetooth).toString();
-				else error = parent.getText(R.string.progress_err_cancelled).toString();
-				return false;
-			}
+//			if (this.isCancelled() || !ret) {
+//				if (!ret) error = parent.getText(R.string.progress_err_no_bluetooth).toString();
+//				else error = parent.getText(R.string.progress_err_cancelled).toString();
+//				return false;
+//			}
 			// TODO get vin
 			vin = "nicestring";
 			
@@ -359,8 +366,8 @@ public class OBD2Service extends Service {
 			if (this.isCancelled())
 				return;
 			try {
-				scheduler.registerFilter(locationData.getClass().getName(),
-						locationData);
+				scheduler.registerFilter(locationData.getClass().getName(),locationData);
+				scheduler.registerOutput(locationData.getClass().getName(),locationData);
 			} catch (Exception e) {
 			}
 		}
