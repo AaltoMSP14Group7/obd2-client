@@ -262,11 +262,13 @@ public class BootActivity extends Activity {
             switch (msg.what) {
             case OBD2Service.MSG_PUB_STATUS:
                 String str1 = msg.getData().getString("str1");
+            	System.out.println("ACTIVITY GOT STATUS MESSAGE " + str1);
                 ProgramState stat = ProgramState.valueOf(str1);
                 changeButtonAppearance(stat);
                 break;
             case OBD2Service.MSG_PUB_STATUS_TXT:
                 String txt = msg.getData().getString("str1");
+            	System.out.println("ACTIVITY GOT STATUS TXT MESSAGE " + txt);
                 ((TextView)(findViewById(R.id.textView3))).setText(txt);
             default:
                 super.handleMessage(msg);

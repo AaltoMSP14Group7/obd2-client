@@ -234,11 +234,11 @@ public class OBD2Service extends Service {
 		NotificationManager mNotifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		mNotifyManager.cancel(TAG_TAG, TAG_ID);
 		stop();
-		OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS_TXT,
-				getText(R.string.state_connection_closed).toString(), null);
-		OBD2Service.this.broadcast(OBD2Service.MSG_PUB_STATUS,
-				ProgramState.IDLE.name(), null);
+//		broadcast(OBD2Service.MSG_PUB_STATUS_TXT, getText(R.string.state_connection_closed).toString(), null);
+//		broadcast(OBD2Service.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
 		started = false;
+		prevState = null;
+		prevTxt = null;
 	}
 
 	/**
@@ -287,6 +287,7 @@ public class OBD2Service extends Service {
 	 * 
 	 */
 	private void cancel() {
+		System.out.println("CANCEL");
 		if (this.task != null) {
 			task.cancel(true);
 		}
@@ -324,18 +325,35 @@ public class OBD2Service extends Service {
 
 		@Override
 		protected Boolean doInBackground(Void... params) {
+			System.out.println("Boot task do in background");
 			boolean ret;
-			// TODO bluetooth
 			publishProgress(parent.getText(R.string.progress_bluetooth)
 					.toString());
 			ret = connectBluetooth();
-//			if (this.isCancelled() || !ret) { // TODO Uncomment these
-//				if (!ret) error = parent.getText(R.string.progress_err_no_bluetooth).toString();
-//				else error = parent.getText(R.string.progress_err_cancelled).toString();
-//				return false;
-//			}
-			// TODO get vin
-			vin = "nicestring";
+			if (this.isCancelled() || !ret) {
+				if (!ret) error = parent.getText(R.string.progress_err_no_bluetooth).toString();
+				else error = parent.getText(R.string.progress_err_cancelled).toString();
+				return false;
+			}
+
+			publishProgress(parent.getText(R.string.progress_car_connection).toString());
+			boolean suc = btConManager.waitForCarConnection();
+			if (this.isCancelled()) {
+				error = parent.getText(R.string.progress_err_cancelled).toString();
+				return false;
+			} else if (!suc) {
+				error = parent.getText(R.string.progress_err_no_car_connection).toString();
+				return false;
+			}
+			publishProgress(parent.getText(R.string.progress_car_info).toString());
+			vin = btConManager.waitForVin(); // Notice that this blocks until VIN is available!
+			if (this.isCancelled()) {
+				error = parent.getText(R.string.progress_err_cancelled).toString();
+				return false;
+			} else if (vin == null) {
+				error = parent.getText(R.string.progress_err_no_car_connection).toString();
+				return false;
+			}
 			
 			publishProgress(parent.getText(R.string.progress_content).toString());
 			scheduler = new Scheduler();
@@ -390,7 +408,7 @@ public class OBD2Service extends Service {
 				return false;
 			}
 
-			publishProgress("Connection done!");
+			publishProgress(parent.getText(R.string.progress_connection_done).toString());
 			return true;
 		}
 		
@@ -486,7 +504,8 @@ public class OBD2Service extends Service {
 		 * @return
 		 */
 		private boolean connectBluetooth() {
-			btConManager = new TempBluetoothConnectionManager(getApplicationContext());
+			btConManager = TempBluetoothConnectionManager.getInstance();
+			btConManager.setContext(getApplicationContext());
 			boolean result = btConManager.connect();
 			return result;
 		}
@@ -496,7 +515,6 @@ public class OBD2Service extends Service {
 
 		@Override
 		public void onProgressUpdate(String... text) {
-			// System.out.println("Progress update");
 			if (text.length < 1)
 				return;
 			String newText = text[0];
@@ -506,7 +524,8 @@ public class OBD2Service extends Service {
 
 		@Override
 		public void onPostExecute(Boolean v) {
-			if (v) { // Successful!
+			System.out.println(v + ": " + error);
+			if (v) { // Successful! 
 				try {
 					locationData.registerForLocationUpdates(parent
 							.getApplicationContext());
@@ -541,7 +560,7 @@ public class OBD2Service extends Service {
 
 		@Override
 		protected void onCancelled(Boolean v) {
-			// System.out.println("CANCEL!");
+			System.out.println("CANCEL TASK!");
 			new CancelBootStrapper().execute();
 		}
 
@@ -563,6 +582,7 @@ public class OBD2Service extends Service {
 		class CancelBootStrapper extends AsyncTask<Void, Void, Void> {
 			@Override
 			protected Void doInBackground(Void... params) {
+				System.out.println("Cancel task back");
 				if (currentTask != null) {
 					currentTask.cancel(true);
 				}
@@ -571,6 +591,7 @@ public class OBD2Service extends Service {
 
 			@Override
 			protected void onPostExecute(Void v) {
+				System.out.println("Cancel task post exec");
 				OBD2Service.this.broadcast(MSG_PUB_STATUS,
 						ProgramState.IDLE.name(), null);
 				OBD2Service.this.broadcast(MSG_PUB_STATUS_TXT, OBD2Service.this
