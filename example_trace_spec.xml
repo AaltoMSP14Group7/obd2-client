@@ -38,6 +38,20 @@
 		</decode>
 	</obdDataSource>
 	
+	<obdDataSource name="throttle_position" pid="17" nBytes="1" min="0" max="100">
+		<decode>
+			<div>
+				<mul>
+					<toFloat>
+						<inputByte index="0" signed="false" />
+					</toFloat>
+					<float value="100" />
+				</mul>
+				<float value="255" />
+			</div>
+		</decode>
+	</obdDataSource>
+	
 	<!-- Write location once per 2000ms-->
 	<deviceLocationOutput updateRate="2000" />
 	
@@ -58,5 +72,11 @@
 		<output name="median_engine_load" filter="median" />
 		<output name="max_engine_load" filter="maximum" />
 		<output name="min_engine_load" filter="minimum" />
+	</filter>
+	
+	<filter updateRate="100" outputRate="5000" source="throttle_position">
+		<output name="median_throttle_position" filter="median" />
+		<output name="max_throttle_position" filter="maximum" />
+		<output name="min_throttle_position" filter="minimum" />
 	</filter>
 </root>
