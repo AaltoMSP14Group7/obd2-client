@@ -15,6 +15,7 @@ public class FunctionRegistry {
 		functionRegistry.put("current", new CurrentValueFilterFunction());
 		functionRegistry.put("average", new AverageValueFilterFunction());
 		functionRegistry.put("variance", new VarianceValueFilterFunction());
+		functionRegistry.put("median", new MedianValueFilterFunction());
 	}
 
 	public static synchronized FilterFunction getFunctionFromRegistry(String functionName) {
