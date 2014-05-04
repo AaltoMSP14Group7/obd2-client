@@ -22,8 +22,20 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 	private Location location;
 	private LocationListener locationListener;
 	private LocationManager lm;
+	private String deviceID;
+	private String vin;
 	
-	public DeviceLocationDataSource(Context applicationContext, ServerConnectionInterface server, long queryTickInterval, long outputTickInterval) {
+	/**
+	 * 
+	 * @param applicationContext
+	 * @param server
+	 * @param queryTickInterval
+	 * @param outputTickInterval
+	 * @param deviceID
+	 * @param vin
+	 */
+	public DeviceLocationDataSource(Context applicationContext, ServerConnectionInterface server, 
+			long queryTickInterval, long outputTickInterval, String deviceID, String vin) {
 		if(applicationContext == null) {
 			throw new IllegalArgumentException("Application context can't be null");
 		}
@@ -37,6 +49,8 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 		this.server = server;
 		this.queryTickInterval = queryTickInterval;
 		this.outputTickInterval = outputTickInterval;
+		this.deviceID = deviceID;
+		this.vin = vin;
 	}
 
 	/**
@@ -78,7 +92,7 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 		if (location != null) {
 			double[] coords = { location.getLatitude(), location.getLongitude() };
 			long timestamp = new Date().getTime() / 1000;
-			SaveDataMessage message = new JSONSaveDataMessage("TODO deviceId", "TODO VIN", timestamp, "location", coords);
+			SaveDataMessage message = new JSONSaveDataMessage(deviceID, vin, timestamp, "location", coords);
 			server.sendMessage(message);
 		}
 	}

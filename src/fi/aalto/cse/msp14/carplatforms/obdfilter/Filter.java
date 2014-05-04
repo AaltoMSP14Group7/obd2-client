@@ -22,10 +22,15 @@ public class Filter implements IResultListener, CloudValueProvider {
 	private final long queryTickInterval;
 	private final long outputTickInterval;
 	private final ArrayList<FilterOutput> outputs;
+	private String device;
+	private String vin;
 
-	public Filter(Element e, ServerConnectionInterface server, Map<String, OBDDataSource> sources) throws FilterParseError {
+	public Filter(Element e, ServerConnectionInterface server, Map<String, OBDDataSource> sources,
+			String deviceID, String vin) throws FilterParseError {
 		this.server = server;
-
+		this.device = deviceID;
+		this.vin = vin;
+		
 		// @updateRate
 		if (e.getAttributeNode("updateRate") == null)
 			throw new FilterParseError("filter, missing updateRate attribute");
@@ -99,8 +104,8 @@ public class Filter implements IResultListener, CloudValueProvider {
 	public void tickOutput() throws NoValueException {
 		for(FilterOutput output: outputs) {
 			FilterAggregate result = output.flushResult();
-			SaveDataMessage msg = new JSONSaveDataMessage("deviceID", 
-					                                      "vin", 
+			SaveDataMessage msg = new JSONSaveDataMessage(device, 
+					                                      vin, 
 					                                      result.getTimestamp(), 
 					                                      output.getName(), 
 					                                      result.getValue()); 

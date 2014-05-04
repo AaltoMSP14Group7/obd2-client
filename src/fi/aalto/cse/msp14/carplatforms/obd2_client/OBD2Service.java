@@ -325,7 +325,6 @@ public class OBD2Service extends Service {
 
 		@Override
 		protected Boolean doInBackground(Void... params) {
-			System.out.println("Boot task do in background");
 			boolean ret;
 			publishProgress(parent.getText(R.string.progress_bluetooth)
 					.toString());
@@ -347,6 +346,7 @@ public class OBD2Service extends Service {
 			}
 			publishProgress(parent.getText(R.string.progress_car_info).toString());
 			vin = btConManager.waitForVin(); // Notice that this blocks until VIN is available!
+			System.out.println("SERVICE GOT VIN " + vin);
 			if (this.isCancelled()) {
 				error = parent.getText(R.string.progress_err_cancelled).toString();
 				return false;
@@ -385,7 +385,8 @@ public class OBD2Service extends Service {
 					}
 				}
 				locationData = new DeviceLocationDataSource(
-						parent.getApplicationContext(), cloud, Integer.MAX_VALUE, updaterate);
+						parent.getApplicationContext(), cloud, Integer.MAX_VALUE, updaterate,
+						deviceID, vin);
 				if (this.isCancelled()) {
 					error = parent.getText(R.string.progress_err_cancelled).toString();
 					return false;
@@ -443,11 +444,8 @@ public class OBD2Service extends Service {
 				e = (Element) ss.item(i);
 				name = e.getAttribute("source");
 				try {
-					System.out.println("OBDFILTER  " + i + ": " + name + " " + e.getElementsByTagName("output").getLength()
-							+ " ja " + e.getAttributes().getNamedItem("outputRate").getNodeValue());
-					newFilter = new Filter(e, cloud, sources);
+					newFilter = new Filter(e, cloud, sources, deviceID, vin);
 					filters.put(name, newFilter);
-					System.out.println("ADDED filter " + e + " " + newFilter);
 				} catch (Exception ex) {
 					// Parse or creation exception!
 					ex.printStackTrace();
@@ -463,7 +461,6 @@ public class OBD2Service extends Service {
 		private Map<String, OBDDataSource> parseOBDDataSources(Document doc) {
 			HashMap<String, OBDDataSource> sources = new HashMap<String, OBDDataSource>();
 			NodeList ss = doc.getElementsByTagName("obdDataSource");
-			System.out.println("OBDSOURCEJA LÖYTYI " + ss.getLength());
 			OBDDataSource newSource; 
 			Element e;
 			String name;
@@ -471,11 +468,8 @@ public class OBD2Service extends Service {
 				e = (Element) ss.item(i);
 				name = e.getAttribute("name");
 				try {
-					System.out.println("OBDSOURCE  " + i + ": " + name + " " + e.getElementsByTagName("decode").getLength());
-					
 					newSource = new OBDDataSource(e, btConManager.getThisOBDLinkManager());
 					sources.put(name, newSource);
-					System.out.println("ADDED source " + e + " " + newSource);
 				} catch (Exception ex) {
 					// Parse exception!
 					ex.printStackTrace();
@@ -524,7 +518,6 @@ public class OBD2Service extends Service {
 
 		@Override
 		public void onPostExecute(Boolean v) {
-			System.out.println(v + ": " + error);
 			if (v) { // Successful! 
 				try {
 					locationData.registerForLocationUpdates(parent
@@ -560,7 +553,6 @@ public class OBD2Service extends Service {
 
 		@Override
 		protected void onCancelled(Boolean v) {
-			System.out.println("CANCEL TASK!");
 			new CancelBootStrapper().execute();
 		}
 
@@ -582,7 +574,6 @@ public class OBD2Service extends Service {
 		class CancelBootStrapper extends AsyncTask<Void, Void, Void> {
 			@Override
 			protected Void doInBackground(Void... params) {
-				System.out.println("Cancel task back");
 				if (currentTask != null) {
 					currentTask.cancel(true);
 				}
@@ -591,7 +582,6 @@ public class OBD2Service extends Service {
 
 			@Override
 			protected void onPostExecute(Void v) {
-				System.out.println("Cancel task post exec");
 				OBD2Service.this.broadcast(MSG_PUB_STATUS,
 						ProgramState.IDLE.name(), null);
 				OBD2Service.this.broadcast(MSG_PUB_STATUS_TXT, OBD2Service.this

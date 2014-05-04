@@ -166,6 +166,7 @@ public class TempBluetoothConnectionManager {
 	class VINGetter implements OBDLinkManager.ConfigurationEventListener {
 		@Override
 		public void onConfigurationChanged(String targetVIN) {
+			System.out.println("Setting VIN " + targetVIN);
 			mostRecentVin = targetVIN;
 			TempBluetoothConnectionManager.this.notifyThis();
 		}
