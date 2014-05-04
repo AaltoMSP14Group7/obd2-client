@@ -17,6 +17,13 @@
     <string name="state_disconnecting">Disconnecting, please wait</string>
     <string name="state_cancelling">Cancelling, please wait</string>
     
+    <!-- These strings are used to represent the status of connection attempt -->
     <string name="progress_bluetooth">Waiting for bluetooth connection</string>
+    <string name="progress_content">Creating rules for fetchin data</string>
+    <string name="progress_starting">Starting process</string>
+    <string name="progress_err_no_bluetooth">Connection failed: Could not connect bluetooth dongle</string>
+    <string name="progress_err_cancelled">Connection failed: Connection cancelled by the user</string>
+    <string name="progress_err_no_filters">Connection failed: Could not fetch XML for filters</string>
+    
     
 </resources>

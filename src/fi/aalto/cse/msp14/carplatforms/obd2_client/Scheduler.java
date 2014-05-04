@@ -33,9 +33,8 @@ public class Scheduler {
 	 * One can register filters even if the scheduler is not running yet.
 	 * @throws Exception 
 	 */
-	public void registerFilter(String name, CloudValueProvider valueProvider/* TODO params? */) 
+	public void registerFilter(String name, CloudValueProvider valueProvider) 
 			throws ValueProviderAlreadyExistsException {
-		// TODO?
 		if (filters.containsKey(name)) { // This exists already!
 			throw new ValueProviderAlreadyExistsException("Given value provider already exists!");
 		}
@@ -43,12 +42,24 @@ public class Scheduler {
 		synchronized(filters) {
 			filters.put(name, task);
 		}
+		if (running) {
+			timer.schedule(task, valueProvider.getQueryTickInterval(), valueProvider.getQueryTickInterval());
+		}
+	}
+
+	/**
+	 * Register a new output tick thingy.
+	 * @param name
+	 * @param valueProvider
+	 * @throws ValueProviderAlreadyExistsException
+	 */
+	public void registerOutput(String name, CloudValueProvider valueProvider) 
+			throws ValueProviderAlreadyExistsException {
 		ValueOutputTask output = new ValueOutputTask(valueProvider);
 		synchronized(outputs) {
 			outputs.put(name, output);
 		}
 		if (running) {
-			timer.schedule(task, valueProvider.getQueryTickInterval(), valueProvider.getQueryTickInterval());
 			timerOutput.schedule(output, valueProvider.getOutputTickInterval(), valueProvider.getOutputTickInterval());
 		}
 	}
@@ -58,19 +69,21 @@ public class Scheduler {
 	 * @param name
 	 */
 	public void unregisterFilter(String name) {
-		// TODO?
 		TimerTask task;
-		TimerTask output;
 		synchronized(filters) {
 			task = filters.remove(name);
 		}
+		if (task != null && running) task.cancel();
+	}
+
+	public void unregisterOutput(String name) {
+		TimerTask output;
 		synchronized(outputs) {
 			output = outputs.remove(name);
 		}
-		if (task != null) task.cancel();
-		if (output != null) output.cancel();
+		if (output != null && running) output.cancel();
 	}
-	
+
 	/**
 	 * Unregister all CloudValueProviders.
 	 */
@@ -94,8 +107,7 @@ public class Scheduler {
 					}
 				}
 			}
-		} catch (Exception e) { // TODO
-			e.printStackTrace();
+		} catch (Exception e) {
 		}
 	}
 	
@@ -137,8 +149,6 @@ public class Scheduler {
 		}
 	}
 	
-	// TODO results. Or of course they could be sent to cloud service directly, too.
-	
 	/**
 	 * 
 	 * @author Maria
@@ -159,14 +169,6 @@ public class Scheduler {
 		@Override
 		public void run() {
 			this.valueProvider.tickQuery();
-		}
-		
-		/**
-		 * 
-		 * @return
-		 */
-		CloudValueProvider getValueProvider() {
-			return this.valueProvider;
 		}
 	}
 	/**
@@ -190,14 +192,5 @@ public class Scheduler {
 		public void run() {
 			this.valueProvider.tickOutput();
 		}
-		
-		/**
-		 * 
-		 * @return
-		 */
-		CloudValueProvider getValueProvider() {
-			return this.valueProvider;
-		}
 	}
-	
 }

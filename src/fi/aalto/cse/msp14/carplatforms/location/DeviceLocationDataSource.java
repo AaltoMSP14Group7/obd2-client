@@ -49,7 +49,7 @@ public class DeviceLocationDataSource implements CloudValueProvider {
 		LocationManager lm = (LocationManager) applicationContext.getSystemService(Context.LOCATION_SERVICE);
 		lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, new LocationUpdater());
 	}
-	
+
 	@Override
 	public void tickQuery() {
 		// Not needed; updated by the location updater as often as possible

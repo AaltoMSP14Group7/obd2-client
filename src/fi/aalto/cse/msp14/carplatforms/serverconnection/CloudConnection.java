@@ -17,6 +17,7 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 import fi.aalto.cse.msp14.carplatforms.exceptions.IllegalThreadUseException;
@@ -29,7 +30,9 @@ import android.os.Looper;
 
 public class CloudConnection implements Runnable, ServerConnectionInterface {
 //	private static final String URI = "http://82.130.19.148:8090/test.php";
-	private static final String URI = "http://10.0.10.11:81/test.php";
+	private static final String URI = "http://10.0.10.11:81/";
+	private static final String POST = "test.php";
+	private static final String XML = "xmlspecs.xml";
 	private static final String URI_SERVER = "http://ec2-54-186-67-231.us-west-2.compute.amazonaws.com:9000/addDataPoint";
 
 	private boolean keepalive;
@@ -60,13 +63,12 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 				try {
 					System.out.println("Send ");
 					HttpClient httpclient = new DefaultHttpClient();  
-					HttpPost request = new HttpPost(URI);  
+					HttpPost request = new HttpPost(URI + POST);  
 					request.setEntity(new StringEntity(current.toMessage()));
 					HttpResponse response = httpclient.execute(request);
 					if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
 						current = null;
 					} else {
-						
 						// Something happened. What TODO now? 
 					}
 				} catch (ClientProtocolException e) {
@@ -119,13 +121,13 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 	 * Otherwise it might block if network is slow or not available.
 	 * @throws IllegalThreadUseException If this method is called for any reason from main thread.
 	 */
-	public void getXML() throws IllegalThreadUseException {
+	public NodeList getFilters() throws IllegalThreadUseException {
 		if (Looper.myLooper() == Looper.getMainLooper()) {
 			throw new IllegalThreadUseException("This method must NOT be called from UI thread!");
 		}
 		// Connect server and fetch XML specs
 		HttpClient httpclient = new DefaultHttpClient();  
-		HttpGet request = new HttpGet(URI + "/xmlspecs");  
+		HttpGet request = new HttpGet(URI + XML);  
 		try {
 			HttpResponse response = httpclient.execute(request);
 			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
@@ -135,6 +137,11 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 					DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 					DocumentBuilder builder = factory.newDocumentBuilder();
 					Document doc = builder.parse(response.getEntity().getContent());
+					NodeList list = doc.getElementsByTagName("filter");
+					for (int i = 0; i < list.getLength(); i++) {
+						System.out.println(list.item(i).getNodeName() + ": " + list.item(i).getAttributes().getNamedItem("source").getNodeValue());
+					}
+					return list;
 					// Now should TODO parsing it all, I guess
 				} catch (ParserConfigurationException e) {
 					e.printStackTrace();
@@ -153,6 +160,7 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+		return null;
 	}
 	
 	
