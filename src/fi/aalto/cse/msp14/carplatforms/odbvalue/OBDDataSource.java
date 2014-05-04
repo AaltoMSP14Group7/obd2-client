@@ -178,7 +178,7 @@ public class OBDDataSource {
 		if (sourceChildren.size() != 1)
 			throw new ParseError(sourceElement.getTagName() + ": expected 1 child, got " + sourceChildren.size());
 		if ("decode".equals(sourceChildren.get(0).getTagName()))
-			throw new ParseError(sourceElement.getTagName() + ": could not find 'decode' element");
+			throw new ParseError(sourceElement.getTagName() + ": could not find 'decode' element, found '" + sourceChildren.get(0).getTagName() + "'");
 		
 		final ArrayList<Element> decodeChildren = getChildElements(sourceChildren.get(0));
 		if (decodeChildren.size() != 1)
