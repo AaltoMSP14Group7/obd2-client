@@ -13,9 +13,7 @@
 						<inputByte index="1" signed="false" />
 					</add>
 				</toFloat>
-				<toFloat>
-					<float value="4" />
-				</toFloat>
+				<float value="4" />
 			</div>
 		</decode>
 	</obdDataSource>
