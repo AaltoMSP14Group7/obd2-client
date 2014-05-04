@@ -1,10 +1,7 @@
 package fi.aalto.cse.msp14.carplatforms.obdfilter;
 
 import java.util.ArrayList;
-
 import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
-
 import fi.aalto.cse.msp14.carplatforms.exceptions.NoValueException;
 import fi.aalto.cse.msp14.carplatforms.obd2_client.CloudValueProvider;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDDataSource;
@@ -63,7 +60,11 @@ public class Filter implements IResultListener, CloudValueProvider {
 	public void tickOutput() throws NoValueException {
 		for(FilterOutput output: outputs) {
 			FilterAggregate result = output.flushResult();
-			SaveDataMessage msg = new JSONSaveDataMessage("", null, 0, null, output); //TODO
+			SaveDataMessage msg = new JSONSaveDataMessage("deviceID", 
+					                                      "vin", 
+					                                      result.getTimestamp(), 
+					                                      output.getName(), 
+					                                      result.getValue()); 
 			server.sendMessage(msg);
 		}
 	}
