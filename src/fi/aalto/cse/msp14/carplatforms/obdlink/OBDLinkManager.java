@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.Set;
 import java.util.TreeMap;
@@ -1586,7 +1587,17 @@ public final class OBDLinkManager {
 
 	private String queryTargetVIN(final BluetoothSocket socket) throws CommandFailedException, VehiclePowerStateInterruptException, OBDNegativeResponseException {
 		final String response = queryAdapterString(socket, "0902\r", BT_DATA_QUERY_LONG_TIMEOUT);
-
+		
+		// Adapter formats multiline responses differently if connected to CAN
+		final boolean isCanResponse = response.contains(":");
+		
+		if (isCanResponse)
+			return parseCanVIN(response);
+		else
+			return parseNonCanVIN(response);
+	}
+	
+	private String parseNonCanVIN(final String response) throws CommandFailedException, OBDNegativeResponseException {
 		// Data is hexadecimal?
 		final byte[] responseData = OBDHexStringToData(response);
 		if (responseData == null || responseData.length == 0)
@@ -1651,7 +1662,8 @@ public final class OBDLinkManager {
 				// All over 17 byte boundary must be null
 				if (writeNdx >= 17 && packets.get(packetNdx).get(dataNdx) != 0x00)
 					throw new OBDResponseErrorException("Got illegal response for a query, non-null byte after defined limit, index " + writeNdx + ". Response " + OBDDataToString(responseData));
-				else if (writeNdx < 17)
+				// Write only non-null chars
+				else if (writeNdx < 17 && packets.get(packetNdx).get(dataNdx) != 0x00)
 					vinData[writeNdx++] = packets.get(packetNdx).get(dataNdx);
 			}
 		}
@@ -1660,6 +1672,38 @@ public final class OBDLinkManager {
 			throw new OBDResponseErrorException("Got illegal response for a query, too short result, expected 17, got " + writeNdx + " bytes. Response " + OBDDataToString(responseData));
 		
 		return convertOBDDataToString(vinData);
+	}
+	
+	private String parseCanVIN(final String response) throws CommandFailedException {
+		StringBuilder vinString = new StringBuilder();
+		
+		// Split to response lines
+		final String[] lines = response.split("\r");
+		
+		// sort by response index
+		Arrays.sort(lines);
+		
+		// concat line payload
+		boolean firstPacket = true;
+		for (String line : lines) {
+			if (!line.contains(":") || line.length() < 3)
+				continue;
+			
+			final byte[] responseData = OBDHexStringToData(line.substring(2));
+			if (responseData == null || responseData.length == 0)
+				throw new CommandFailedException("VIN query failed, result data is not valid hex string. Response " + response);
+			
+			int readNdx = (firstPacket) ? (3) : (0);
+			firstPacket = false;
+			for (; readNdx < responseData.length; ++readNdx)
+				if (responseData[readNdx] != 0x00)
+					vinString.append((char)responseData[readNdx]);
+		}
+		
+		if (vinString.length() != 17)
+			throw new OBDResponseErrorException("Got illegal response for a query, result length error, expected 17, got " + vinString.length() + " bytes. Response " + response);
+		
+		return vinString.toString();
 	}
 	
 	private String generateFakeVIN () {
