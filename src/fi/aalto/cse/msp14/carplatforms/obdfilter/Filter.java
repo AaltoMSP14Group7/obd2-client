@@ -72,6 +72,9 @@ public class Filter implements IResultListener, CloudValueProvider {
 				outputs.add(new FilterOutput(childElement));
 			}
 		}
+		
+		// listen to results
+		source.addListener(this);
 	}
 	
 	public void onQueryResult(float value) {

@@ -19,11 +19,9 @@ public class CurrentValueFilterFunction implements FilterFunction {
 
 	public void addSample(float value, long timestamp) {
 		synchronized(dataLock) {
-			if(!hasValue) {
-				current = value;
-				this.timestamp = timestamp;
-				hasValue = true;
-			}
+			current = value;
+			this.timestamp = timestamp;
+			hasValue = true;
 		}
 	}
 

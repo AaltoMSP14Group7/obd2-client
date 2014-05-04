@@ -19,17 +19,16 @@ public class MedianValueFilterFunction implements FilterFunction {
 	public MedianValueFilterFunction() {
 		this.dataLock = new Object();
 		this.hasValue = false;
+		this.data = new ArrayList<Float>();
 	}
 
 	public void addSample(float value, long timestamp) {
 		synchronized(dataLock) {
-			if(!hasValue) {
-				data.add(value);
-				Collections.sort(data);
-				median = data.get(data.size()/2);
-				this.timestamp = timestamp;
-				hasValue = true;
-			}
+			data.add(value);
+			Collections.sort(data);
+			median = data.get(data.size()/2);
+			this.timestamp = timestamp;
+			hasValue = true;
 		}
 	}
 
@@ -39,6 +38,7 @@ public class MedianValueFilterFunction implements FilterFunction {
 				throw new NoValueException("");
 			} else {
 				hasValue = false;
+				data.clear();
 				return new FilterAggregate(median, timestamp);
 			}
 		}

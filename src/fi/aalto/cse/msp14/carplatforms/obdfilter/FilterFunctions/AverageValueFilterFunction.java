@@ -20,11 +20,10 @@ public class AverageValueFilterFunction implements FilterFunction{
 
 	public void addSample(float value, long timestamp) {
 		synchronized(dataLock) {
-			if(!hasValue) {
-				average = (average + value) / n++;
-				this.timestamp = timestamp;
-				hasValue = true;
-			}
+			average = (average * n + value) / (n + 1);
+			++n;
+			this.timestamp = timestamp;
+			hasValue = true;
 		}
 	}
 
@@ -34,6 +33,7 @@ public class AverageValueFilterFunction implements FilterFunction{
 				throw new NoValueException("");
 			} else {
 				hasValue = false;
+				n = 0;
 				return new FilterAggregate(average, timestamp);
 			}
 		}

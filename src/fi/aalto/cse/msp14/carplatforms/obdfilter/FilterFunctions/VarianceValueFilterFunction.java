@@ -18,26 +18,25 @@ public class VarianceValueFilterFunction implements FilterFunction {
 	public VarianceValueFilterFunction() {
 		this.dataLock = new Object();
 		this.hasValue = false;
+		this.data = new ArrayList<Float>();
 	}
 
 	public void addSample(float value, long timestamp) {
 		synchronized(dataLock) {
-			if(!hasValue) {
-				data.add(value);
-				int tmp = 0;
-				for(float f : data) {
-					tmp += f;
-				}
-				mean = tmp/data.size();
-				
-				tmp = 0;
-				for(float f : data) {
-					tmp += (mean-f)*(mean-f);
-				}
-				variance = tmp/data.size();
-				this.timestamp = timestamp;
-				hasValue = true;
+			data.add(value);
+			float tmp = 0;
+			for(float f : data) {
+				tmp += f;
 			}
+			mean = tmp/data.size();
+			
+			tmp = 0;
+			for(float f : data) {
+				tmp += (mean-f)*(mean-f);
+			}
+			variance = tmp/data.size();
+			this.timestamp = timestamp;
+			hasValue = true;
 		}
 	}
 
@@ -47,6 +46,7 @@ public class VarianceValueFilterFunction implements FilterFunction {
 				throw new NoValueException("");
 			} else {
 				hasValue = false;
+				data.clear();
 				return new FilterAggregate(variance, timestamp);
 			}
 		}
