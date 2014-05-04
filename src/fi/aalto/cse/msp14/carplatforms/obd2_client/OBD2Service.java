@@ -328,6 +328,9 @@ public class OBD2Service extends Service {
 			boolean ret;
 			publishProgress(parent.getText(R.string.progress_bluetooth)
 					.toString());
+			deviceID = createID();
+			System.out.println("DEVICE ID: " + deviceID);
+
 			ret = connectBluetooth();
 			if (this.isCancelled() || !ret) {
 				if (!ret) error = parent.getText(R.string.progress_err_no_bluetooth).toString();
@@ -547,8 +550,9 @@ public class OBD2Service extends Service {
 		private String createID() {
 			TelephonyManager tm = (TelephonyManager) parent
 					.getSystemService(Context.TELEPHONY_SERVICE);
-			String tohash = tm.getDeviceId();
-			return tohash;
+			String did = tm.getDeviceId();
+			if (did == null) return "unknown";
+			return did;
 		}
 
 		@Override

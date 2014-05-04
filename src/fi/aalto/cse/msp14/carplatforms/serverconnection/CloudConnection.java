@@ -56,50 +56,59 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 	}
 	
 	@Override
-	public synchronized void run() {
+	public void run() {
 		while (keepalive) {
-			if (current == null) {
-				current = messages.poll();
-			}
-			if (current != null) { // If it is still null, then there is no use to send anything.
-				try {
-					System.out.println("Send ");
-					HttpClient httpclient = new DefaultHttpClient();  
-					HttpPost request = new HttpPost(URI + POST);  
-					request.setEntity(new StringEntity(current.toMessage()));
-					HttpResponse response = httpclient.execute(request);
-					if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
+			try {
+				current = messages.take();
+	
+				if (current != null) { // If it is still null, then there is no use to send anything.
+					try {
+						System.out.println("Sending actually " + current.toMessage());
+						HttpClient httpclient = new DefaultHttpClient();  
+						HttpPost request = new HttpPost(URI + POST);
+						request.addHeader("Content-Type", "application/json");
+						request.addHeader("Connection", "close");
+						request.setEntity(new StringEntity(current.toMessage()));
+						HttpResponse response = httpclient.execute(request);
+
 						current = null;
-					} else {
-						// Something happened. What TODO now? 
+						System.out.println("Sending actually DONE " + response.getStatusLine().getStatusCode());
+					} catch (ClientProtocolException e) {
+						// Protocol error. What can one do!
+					} catch (IOException e) {
+						// No connection!
+						System.out.println("NO CONNECTION");
+						ConnectivityManager connMgr = (ConnectivityManager) parent.getSystemService(Context.CONNECTIVITY_SERVICE);
+				        android.net.NetworkInfo wifi = connMgr
+				                .getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+				        android.net.NetworkInfo mobile = connMgr
+				                .getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
+			        	System.out.println(!isAvailable(wifi) + " and " + !isAvailable(mobile));
+				        if (!isAvailable(wifi) && !isAvailable(mobile)) {
+				        	waitForConnection();
+				        	System.out.println("Registered!");
+				        }
+					} catch (Exception e) {
+						// Sending failed
+						// Other exception
 					}
-				} catch (ClientProtocolException e) {
-					// Protocol error. What can one do!
-				} catch (IOException e) {
-					// No connection!
-					ConnectivityManager connMgr = (ConnectivityManager) parent.getSystemService(Context.CONNECTIVITY_SERVICE);
-			        android.net.NetworkInfo wifi = connMgr
-			                .getNetworkInfo(ConnectivityManager.TYPE_WIFI);
-			        android.net.NetworkInfo mobile = connMgr
-			                .getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
-		        	System.out.println(!isAvailable(wifi) + " and " + !isAvailable(mobile));
-			        if (!isAvailable(wifi) && !isAvailable(mobile)) {
-			        	waitForConnection();
-			        	System.out.println("Registered!");
-			        }
-				} catch (Exception e) {
-					// Sending failed
-					// Other exception
 				}
-			}
-			while(keepalive && (messages.isEmpty() || waitingForConnection)) {
-				System.out.println("Wait");
-				try {
-					wait();
-					System.out.println("Continue");
-				} catch (InterruptedException e) {
-					e.printStackTrace();
+				
+				while(keepalive && waitingForConnection) {
+					System.out.println("Wait for connection!");
+					synchronized(this) {
+						try {
+							wait();
+							System.out.println("Continue after new connection!");
+						} catch (InterruptedException e) {
+							e.printStackTrace();
+						}
+					}
 				}
+			} catch (InterruptedException ie) {
+				ie.printStackTrace();
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
 		}
 		System.out.println("THREAD STOPPED");
@@ -134,7 +143,6 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 			HttpResponse response = httpclient.execute(request);
 			if (response.getStatusLine().getStatusCode() == HttpStatus.SC_OK) {
 				// Yay! Now we got the wanted XML specs!
-				// So. What exactly TODO now?
 				try {
 					DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 					DocumentBuilder builder = factory.newDocumentBuilder();
@@ -147,7 +155,6 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 					}
 
 					return doc;
-					// Now should TODO parsing it all, I guess
 				} catch (ParserConfigurationException e) {
 					e.printStackTrace();
 				} catch (IllegalStateException e) {
@@ -156,7 +163,7 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 					e.printStackTrace();
 				}
 			} else {
-				// Something happened. What TODO now? 
+				// Something happened. Returning null is enough for now. 
 			}
 		} catch (UnsupportedEncodingException e) {
 			e.printStackTrace();
@@ -181,7 +188,7 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 		}
 	}
 	
-	public synchronized void stop() {
+	public void stop() {
 		try {
 			if (this.conStateBCListener != null) {
 				try {
@@ -192,29 +199,31 @@ public class CloudConnection implements Runnable, ServerConnectionInterface {
 				}
 			}
 			keepalive = false;
-			notify();
+			synchronized(this) {
+				notify();
+			}
 		} catch (Exception e) {
-			// TODO ?
 			e.printStackTrace();
 		}
 	}
 	
 	@Override
-	public synchronized void sendMessage(SaveDataMessage message) {
-		System.out.println("SENDING MESSAGE " + message.toMessage());
+	public void sendMessage(SaveDataMessage message) {
+		System.out.println("Sending message " + message.toMessage());
 		this.messages.offer(message);
-		notify();
 	}
 	
 	@Override
-	public synchronized void connectionAvailable() {
+	public void connectionAvailable() {
 		System.out.println("CONNECTION AVAILABLE");
 		if (this.waitingForConnection) {
 			System.out.println("Connection available");
 			this.waitingForConnection = false;
 			parent.unregisterReceiver(conStateBCListener);
 			conStateBCListener = null;
-			notify();
+			synchronized(this) {
+				notify();
+			}
 		}
 	}
 }
