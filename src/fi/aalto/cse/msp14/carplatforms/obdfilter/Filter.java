@@ -5,38 +5,35 @@ import java.util.ArrayList;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
+import fi.aalto.cse.msp14.carplatforms.exceptions.NoValueException;
 import fi.aalto.cse.msp14.carplatforms.obd2_client.CloudValueProvider;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDDataSource;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDDataSource.IResultListener;
+import fi.aalto.cse.msp14.carplatforms.serverconnection.JSONSaveDataMessage;
+import fi.aalto.cse.msp14.carplatforms.serverconnection.SaveDataMessage;
+import fi.aalto.cse.msp14.carplatforms.serverconnection.ServerConnectionInterface;
 
 
 public class Filter implements IResultListener, CloudValueProvider {
 
+	private ServerConnectionInterface server;
 	private OBDDataSource source;
-	private float updateRate;
-	private float outputRate;
+	private long queryTickInterval;
+	private long outputTickInterval;
 	private ArrayList<FilterOutput> outputs;
 
-	public Filter(Element e) {
-		this.updateRate = Float.valueOf(e.getAttribute("updateRate"));
-		String sourceName = e.getAttribute("source");
-		//this.source = getSourceByName(sourceName); TODO
-		
-		NodeList list = e.getChildNodes();
-		for(int i=0; i < list.getLength(); i++) {
-			Element child = (Element)list.item(i);
-			FilterOutput out = new FilterOutput(source, child);
-			outputs.add(out);
-			this.outputRate = Float.valueOf(e.getAttribute("outputRate"));
-		}
+	public Filter(Element e, ServerConnectionInterface server, OBDDataSource source, long queryTickInterval, long outputTickInterval) {
+		this.server = server;
+		this.queryTickInterval = queryTickInterval;
+		this.outputTickInterval = outputTickInterval;
+		this.source = source;
 	}
-
-	public void tick() {
-		source.update();
+	
+	public void setOutputs(ArrayList<FilterOutput> outputs) {
+		this.outputs = outputs;
 	}
 	
 	public void onQueryResult(float value) {
-		
 		for(FilterOutput f : outputs) {
 			Long timestamp = System.currentTimeMillis() / 1000L;
 			f.getFunction().addSample(value, timestamp);
@@ -44,29 +41,31 @@ public class Filter implements IResultListener, CloudValueProvider {
 	}
 
 	public void onQueryFailure() {
-		//tee jotain
+		
 	}
 
 	@Override
 	public long getQueryTickInterval() {
-		return (long)updateRate;
+		return this.queryTickInterval;
 	}
 
 	@Override
 	public long getOutputTickInterval() {
-		return (long)outputRate;
+		return this.outputTickInterval;
 	}
 
 	@Override
 	public void tickQuery() {
-		// TODO Auto-generated method stub
-		
+		source.update();
 	}
 
 	@Override
-	public void tickOutput() {
-		// TODO Auto-generated method stub
-		
+	public void tickOutput() throws NoValueException {
+		for(FilterOutput output: outputs) {
+			FilterAggregate result = output.flushResult();
+			SaveDataMessage msg = new JSONSaveDataMessage("", null, 0, null, output); //TODO
+			server.sendMessage(msg);
+		}
 	}
 
 }

@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import fi.aalto.cse.msp14.carplatforms.exceptions.NoValueException;
 import fi.aalto.cse.msp14.carplatforms.exceptions.ValueProviderAlreadyExistsException;
 
 /**
@@ -190,7 +191,11 @@ public class Scheduler {
 		
 		@Override
 		public void run() {
-			this.valueProvider.tickOutput();
+			try {
+				this.valueProvider.tickOutput();
+			} catch (NoValueException e) {
+				// Do something
+			}
 		}
 	}
 }
