@@ -1,7 +1,11 @@
 package fi.aalto.cse.msp14.carplatforms.obdfilter;
 
 import java.util.ArrayList;
+import java.util.Map;
+
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+
 import fi.aalto.cse.msp14.carplatforms.exceptions.NoValueException;
 import fi.aalto.cse.msp14.carplatforms.obd2_client.CloudValueProvider;
 import fi.aalto.cse.msp14.carplatforms.odbvalue.OBDDataSource;
@@ -13,21 +17,56 @@ import fi.aalto.cse.msp14.carplatforms.serverconnection.ServerConnectionInterfac
 
 public class Filter implements IResultListener, CloudValueProvider {
 
-	private ServerConnectionInterface server;
-	private OBDDataSource source;
-	private long queryTickInterval;
-	private long outputTickInterval;
-	private ArrayList<FilterOutput> outputs;
+	private final ServerConnectionInterface server;
+	private final OBDDataSource source;
+	private final long queryTickInterval;
+	private final long outputTickInterval;
+	private final ArrayList<FilterOutput> outputs;
 
-	public Filter(Element e, ServerConnectionInterface server, OBDDataSource source, long queryTickInterval, long outputTickInterval) {
+	public Filter(Element e, ServerConnectionInterface server, Map<String, OBDDataSource> sources) throws FilterParseError {
 		this.server = server;
-		this.queryTickInterval = queryTickInterval;
-		this.outputTickInterval = outputTickInterval;
-		this.source = source;
-	}
-	
-	public void setOutputs(ArrayList<FilterOutput> outputs) {
-		this.outputs = outputs;
+
+		// @updateRate
+		if (e.getAttributeNode("updateRate") == null)
+			throw new FilterParseError("filter, missing updateRate attribute");
+
+		try {
+			queryTickInterval = Integer.parseInt(e.getAttributeNode("updateRate").getNodeValue());
+		} catch (NumberFormatException ex) {
+			throw new FilterParseError("filter @updateRate, @updateRate was not integer");
+		}
+
+		// @outputRate
+		if (e.getAttributeNode("outputRate") == null)
+			throw new FilterParseError("filter, missing outputRate attribute");
+
+		try {
+			outputTickInterval = Integer.parseInt(e.getAttributeNode("outputRate").getNodeValue());
+		} catch (NumberFormatException ex) {
+			throw new FilterParseError("filter @outputRate, @outputRate was not integer");
+		}
+		
+		// @source
+		if (e.getAttributeNode("source") == null)
+			throw new FilterParseError("filter, missing source attribute");
+		
+		source = sources.get(e.getAttributeNode("source").getNodeValue());
+		if (source == null)
+			throw new FilterParseError("filter @source, no such data source");
+		
+		// child elements
+		outputs = new ArrayList<>();
+		for (int ndx = 0; ndx < e.getChildNodes().getLength(); ++ndx) {
+			if (e.getChildNodes().item(ndx).getNodeType() == Node.ELEMENT_NODE)
+			{
+				Element childElement = (Element)e.getChildNodes().item(ndx);
+				
+				if (!"output".equals(childElement.getTagName()))
+					throw new FilterParseError("filter, got unexpected child, expected 'output'");
+				
+				outputs.add(new FilterOutput(childElement));
+			}
+		}
 	}
 	
 	public void onQueryResult(float value) {

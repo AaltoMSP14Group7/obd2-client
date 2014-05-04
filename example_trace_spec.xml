@@ -44,21 +44,21 @@
 	<deviceLocationOutput updateRate="2000" />
 	
 	<!-- Sample RPM once per 100ms, output median, max and min once per 5000ms-->
-	<filter updateRate="100" source="engine_rpm">
-		<output name="median_engine_rpm" outputRate="5000" filter="median" />
-		<output name="max_engine_rpm" outputRate="5000" filter="maximum" />
-		<output name="min_engine_rpm" outputRate="5000" filter="minimum" />
+	<filter updateRate="100" outputRate="5000" source="engine_rpm">
+		<output name="median_engine_rpm" filter="median" />
+		<output name="max_engine_rpm" filter="maximum" />
+		<output name="min_engine_rpm" filter="minimum" />
 	</filter>
 	
-	<filter updateRate="100" source="vehicle_speed">
-		<output name="median_vehicle_speed" outputRate="5000" filter="median" />
-		<output name="max_vehicle_speed" outputRate="5000" filter="maximum" />
-		<output name="min_vehicle_speed" outputRate="5000" filter="minimum" />
+	<filter updateRate="100" outputRate="5000" source="vehicle_speed">
+		<output name="median_vehicle_speed" filter="median" />
+		<output name="max_vehicle_speed" filter="maximum" />
+		<output name="min_vehicle_speed" filter="minimum" />
 	</filter>
 	
-	<filter updateRate="100" source="engine_load">
-		<output name="median_engine_load" outputRate="5000" filter="median" />
-		<output name="max_engine_load" outputRate="5000" filter="maximum" />
-		<output name="min_engine_load" outputRate="5000" filter="minimum" />
+	<filter updateRate="100" outputRate="5000" source="engine_load">
+		<output name="median_engine_load" filter="median" />
+		<output name="max_engine_load" filter="maximum" />
+		<output name="min_engine_load" filter="minimum" />
 	</filter>
 </root>
