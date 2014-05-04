@@ -73,7 +73,7 @@ public class OBD2Service extends Service {
 
 	// Messaging related stuff
 	private Messenger messenger;
-	static ArrayList<Messenger> statusListeners = new ArrayList<Messenger>(); 
+	private static ArrayList<Messenger> statusListeners = new ArrayList<Messenger>(); 
 		// All status listeners
 
 	/**
@@ -167,7 +167,7 @@ public class OBD2Service extends Service {
 				statusListeners.get(i).send(msg);
 			} catch (RemoteException e) {
 				System.out.println("EXCEPTION broadcasting: " + e.toString());
-				statusListeners.remove(i); // TODO Be careful for concurrent
+				statusListeners.remove(i); // Be careful for concurrent
 											// modification exception!
 			}
 		}
@@ -234,11 +234,12 @@ public class OBD2Service extends Service {
 		NotificationManager mNotifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		mNotifyManager.cancel(TAG_TAG, TAG_ID);
 		stop();
-//		broadcast(OBD2Service.MSG_PUB_STATUS_TXT, getText(R.string.state_connection_closed).toString(), null);
-//		broadcast(OBD2Service.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
+		broadcast(OBD2Service.MSG_PUB_STATUS_TXT, getText(R.string.state_connection_closed).toString(), null);
+		broadcast(OBD2Service.MSG_PUB_STATUS, ProgramState.IDLE.name(), null);
 		started = false;
 		prevState = null;
 		prevTxt = null;
+		statusListeners.clear();
 	}
 
 	/**
@@ -254,7 +255,6 @@ public class OBD2Service extends Service {
 				wakelock.release();
 				wakelock = null;
 			} catch (Exception e) {
-				System.out.println(e.toString());
 				// Do nothing
 			}
 		}
@@ -287,7 +287,6 @@ public class OBD2Service extends Service {
 	 * 
 	 */
 	private void cancel() {
-		System.out.println("CANCEL");
 		if (this.task != null) {
 			task.cancel(true);
 		}
@@ -307,10 +306,8 @@ public class OBD2Service extends Service {
 	 */
 	private class BootStrapperTask extends AsyncTask<Void, String, Boolean> {
 
-		private AsyncTask currentTask;
 		private OBD2Service parent; // Not just activity, because some things
 									// have to be passed to this one.
-
 		private String error;
 		
 		/**
@@ -329,7 +326,6 @@ public class OBD2Service extends Service {
 			publishProgress(parent.getText(R.string.progress_bluetooth)
 					.toString());
 			deviceID = createID();
-			System.out.println("DEVICE ID: " + deviceID);
 
 			ret = connectBluetooth();
 			if (this.isCancelled() || !ret) {
@@ -349,7 +345,6 @@ public class OBD2Service extends Service {
 			}
 			publishProgress(parent.getText(R.string.progress_car_info).toString());
 			vin = btConManager.waitForVin(); // Notice that this blocks until VIN is available!
-			System.out.println("SERVICE GOT VIN " + vin);
 			if (this.isCancelled()) {
 				error = parent.getText(R.string.progress_err_cancelled).toString();
 				return false;
@@ -398,7 +393,7 @@ public class OBD2Service extends Service {
 					scheduler.registerOutput(locationData.getClass().getName(),locationData);
 				} catch (Exception e) {/* Yeah yeah... */}
 			}
-			
+
 			Map<String, OBDDataSource> sources = parseOBDDataSources(list);
 			// Do something with them, or not.
 
@@ -496,7 +491,7 @@ public class OBD2Service extends Service {
 		}
 
 		/**
-		 * TODO Bluetooth connection.
+		 * Bluetooth connection
 		 * 
 		 * @return
 		 */
@@ -557,42 +552,12 @@ public class OBD2Service extends Service {
 
 		@Override
 		protected void onCancelled(Boolean v) {
-			new CancelBootStrapper().execute();
-		}
-
-		/*
-		 * ----------------------------------------------------------------------- 
-		 * Another class
-		 * -----------------------------------------------------------------------
-		 */
-
-		/**
-		 * This class only takes care of canceling everything what was done
-		 * before. This is needed if in the middle of initialization (before the
-		 * task is finished) the user decides to cancel whole the connection
-		 * thing.
-		 * 
-		 * @author Maria
-		 * 
-		 */
-		class CancelBootStrapper extends AsyncTask<Void, Void, Void> {
-			@Override
-			protected Void doInBackground(Void... params) {
-				if (currentTask != null) {
-					currentTask.cancel(true);
-				}
-				return null;
-			}
-
-			@Override
-			protected void onPostExecute(Void v) {
-				OBD2Service.this.broadcast(MSG_PUB_STATUS,
-						ProgramState.IDLE.name(), null);
-				OBD2Service.this.broadcast(MSG_PUB_STATUS_TXT, OBD2Service.this
-						.getText(R.string.state_connection_cancelled)
-						.toString(), null);
-				OBD2Service.this.stopSelf();
-			}
+			OBD2Service.this.broadcast(MSG_PUB_STATUS,
+					ProgramState.IDLE.name(), null);
+			OBD2Service.this.broadcast(MSG_PUB_STATUS_TXT, OBD2Service.this
+					.getText(R.string.state_connection_cancelled)
+					.toString(), null);
+			OBD2Service.this.stopSelf();
 		}
 	}
 }

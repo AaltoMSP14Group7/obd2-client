@@ -37,21 +37,19 @@ public class BootActivity extends Activity {
 	private ServiceConnection mConnection = new ServiceConnection() {
 		@Override
         public void onServiceConnected(ComponentName className, IBinder service) {
-			System.out.println("SERVICE CONNECTED");
         	serviceMessenger = new Messenger(service);
             try {
                 Message msg = Message.obtain(null, OBD2Service.MSG_REGISTER_AS_STATUS_LISTENER);
                 msg.replyTo = messenger;
                 serviceMessenger.send(msg);
             } catch (RemoteException e) {
-            	System.out.println("Sending message " + e.toString());
+            	// Yeah, some exception again
             }
         }
 
 		@Override
         public void onServiceDisconnected(ComponentName className) {
             // This is called when the connection with the service has been unexpectedly disconnected - process crashed.
-			System.out.println("SERVICE DISCONNECTED");
 			serviceMessenger = null;
         }
     };
@@ -217,7 +215,7 @@ public class BootActivity extends Activity {
      */
     private void stopService() {
         if (cloud != null) {
-        	this.unbindService(mConnection);
+        	unbindService(mConnection);
         	stopService(cloud);
         	cloud = null;
         	isBound = false;
@@ -228,13 +226,13 @@ public class BootActivity extends Activity {
 	protected void onDestroy() {
 		super.onDestroy();
 		unbind();
+    	stopService(cloud);// Yes, let's stop it now.
 	}
 
 	/**
 	 * 
 	 */
 	private void unbind() {
-		System.out.println("UNBIND");
         if (cloud != null && this.isBound) {
         	try {
         		try {
@@ -262,13 +260,11 @@ public class BootActivity extends Activity {
             switch (msg.what) {
             case OBD2Service.MSG_PUB_STATUS:
                 String str1 = msg.getData().getString("str1");
-            	System.out.println("ACTIVITY GOT STATUS MESSAGE " + str1);
                 ProgramState stat = ProgramState.valueOf(str1);
                 changeButtonAppearance(stat);
                 break;
             case OBD2Service.MSG_PUB_STATUS_TXT:
                 String txt = msg.getData().getString("str1");
-            	System.out.println("ACTIVITY GOT STATUS TXT MESSAGE " + txt);
                 ((TextView)(findViewById(R.id.textView3))).setText(txt);
             default:
                 super.handleMessage(msg);
