@@ -124,7 +124,7 @@ public class TempBluetoothConnectionManager {
 	 * @return
 	 */
 	public synchronized boolean waitForCarConnection() {
-		while (mostRecentState != OBDLinkManager.LinkState.STATE_ON || mostRecentPowerstate) {
+		while (mostRecentState != OBDLinkManager.LinkState.STATE_ON || !mostRecentPowerstate) {
 			try {
 				wait();
 			} catch (InterruptedException e) {
