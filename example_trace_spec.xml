@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root>
+	
+	<obdDataSource name="engine_rpm" pid="12" nBytes="2" min="0" max="16383.75">
+		<decode>
+			<div>
+				<toFloat>
+					<add>
+						<mul>
+							<inputByte index="0" signed="false" />
+							<integer value="256" />
+						</mul>
+						<inputByte index="1" signed="false" />
+					</add>
+				</toFloat>
+				<toFloat>
+					<float value="4" />
+				</toFloat>
+			</div>
+		</decode>
+	</obdDataSoruce>
+	
+	<obdDataSource name="vehicle_speed" pid="13" nBytes="1" min="0" max="255">
+		<decode>
+			<inputByte index="0" signed="false" />
+		</decode>
+	</obdDataSoruce>
+	
+	<obdDataSource name="engine_load" pid="4" nBytes="1" min="0" max="100">
+		<decode>
+			<div>
+				<mul>
+					<toFloat>
+						<inputByte index="0" signed="false" />
+					</toFloat>
+					<float value="100" />
+				</mul>
+				<float value="255" />
+			</div>
+		</decode>
+	</obdDataSoruce>
+	
+	<!-- Sample RPM once per 100ms, output median, max and min once per 5000ms-->
+	<filter updateRate="100" source="engine_rpm">
+		<output name="median_engine_rpm" outputRate="5000" filter="median" />
+		<output name="max_engine_rpm" outputRate="5000" filter="maximum" />
+		<output name="min_engine_rpm" outputRate="5000" filter="minimum" />
+	</filter>
+	
+	<filter updateRate="100" source="vehicle_speed">
+		<output name="median_vehicle_speed" outputRate="5000" filter="median" />
+		<output name="max_vehicle_speed" outputRate="5000" filter="maximum" />
+		<output name="min_vehicle_speed" outputRate="5000" filter="minimum" />
+	</filter>
+	
+	<filter updateRate="100" source="engine_load">
+		<output name="median_engine_load" outputRate="5000" filter="median" />
+		<output name="max_engine_load" outputRate="5000" filter="maximum" />
+		<output name="min_engine_load" outputRate="5000" filter="minimum" />
+	</filter>
+</root>
